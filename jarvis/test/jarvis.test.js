@@ -143,3 +143,86 @@ test("rotas: senha, painel e validação", async () => {
   assert.equal((await req("POST", "/api/conversar", { senha: "segredo", corpo: { conversa: "../x", texto: "oi" } })).status, 400);
   assert.equal((await req("GET", "/api/nada", { senha: "segredo" })).status, 404);
 });
+
+// ---------- Google Agenda (com Google simulado) ----------
+import { GoogleAgenda } from "../src/google.js";
+
+function googleFalso() {
+  const chamadas = [];
+  const eventos = [];
+  let refreshValido = true;
+  const resposta = (status, corpo) => new Response(corpo === null ? null : JSON.stringify(corpo), { status });
+  const f = async (url, opcoes = {}) => {
+    const u = new URL(url);
+    chamadas.push({ url: u, opcoes });
+    if (u.hostname === "oauth2.googleapis.com") {
+      const campos = new URLSearchParams(opcoes.body);
+      if (campos.get("grant_type") === "authorization_code") {
+        return resposta(200, { access_token: "acesso-1", expires_in: 3600, refresh_token: "refresh-1" });
+      }
+      if (!refreshValido) return resposta(400, { error: "invalid_grant" });
+      return resposta(200, { access_token: "acesso-2", expires_in: 3600 });
+    }
+    if (opcoes.method === "POST") {
+      const e = JSON.parse(opcoes.body);
+      const criado = { id: `ev${eventos.length + 1}`, summary: e.summary, start: e.start, end: e.end, htmlLink: "https://cal/x" };
+      eventos.push(criado);
+      return resposta(200, criado);
+    }
+    if (opcoes.method === "DELETE") return resposta(204, null);
+    return resposta(200, { items: eventos });
+  };
+  return { f, chamadas, invalidarRefresh: () => (refreshValido = false) };
+}
+
+test("google: conecta com state de uso único e usa a agenda", async () => {
+  const armazem = new ArmazemBlobs(blobsFalso());
+  const g = googleFalso();
+  const agenda = new GoogleAgenda(armazem, { fetch: g.f, env: { GOOGLE_CLIENT_ID: "id", GOOGLE_CLIENT_SECRET: "segredo" } });
+  assert.equal(agenda.configurado, true);
+  assert.equal(await agenda.conectado(), false);
+  await assert.rejects(agenda.listarEventos(new Date(), new Date()), /não conectado/);
+
+  const link = new URL(await agenda.linkDeConexao("https://maijarvis.netlify.app/api/google/retorno"));
+  assert.equal(link.searchParams.get("access_type"), "offline");
+  assert.equal(link.searchParams.get("scope"), "https://www.googleapis.com/auth/calendar.events");
+  const estado = link.searchParams.get("state");
+
+  await assert.rejects(agenda.concluirConexao("codigo", "0".repeat(32)), /inválido/);
+  await agenda.concluirConexao("codigo", estado);
+  assert.equal(await agenda.conectado(), true);
+  await assert.rejects(agenda.concluirConexao("codigo", estado), /inválido/); // não reaproveita o state
+
+  const criado = await agenda.criarEvento({ titulo: "Dentista", inicio: "2026-11-27T14:00:00-03:00", fim: "2026-11-27T15:00:00-03:00", local: "", descricao: "" });
+  assert.equal(criado.titulo, "Dentista");
+  await assert.rejects(agenda.criarEvento({ titulo: "x", inicio: "2026-11-27T15:00:00-03:00", fim: "2026-11-27T14:00:00-03:00" }), /depois do início/);
+  const lista = await agenda.listarEventos("2026-11-27T00:00:00-03:00", "2026-11-28T00:00:00-03:00");
+  assert.deepEqual(lista.map((e) => e.titulo), ["Dentista"]);
+  assert.equal(g.chamadas.at(-1).opcoes.headers.authorization, "Bearer acesso-1");
+  assert.deepEqual(await agenda.apagarEvento("ev1"), { apagado: true });
+
+  // Token de acesso vencido: renova com o refresh token; se o Google revogar, desconecta.
+  agenda.tokenAcesso = null;
+  await agenda.listarEventos(new Date(), new Date());
+  assert.equal(g.chamadas.at(-1).opcoes.headers.authorization, "Bearer acesso-2");
+  agenda.tokenAcesso = null;
+  g.invalidarRefresh();
+  await assert.rejects(agenda.listarEventos(new Date(), new Date()), /expirou/);
+  assert.equal(await agenda.conectado(), false);
+});
+
+test("google: ferramentas da agenda entram para o Jarvis", () => {
+  const banco = novoBanco();
+  const sem = criarFerramentas(banco).definicoes.map((d) => d.name);
+  const com = criarFerramentas(banco, { listarEventos() {}, criarEvento() {}, apagarEvento() {} }).definicoes.map((d) => d.name);
+  assert.ok(!sem.includes("agenda_criar_evento"));
+  assert.deepEqual(com.filter((n) => n.startsWith("agenda_")), ["agenda_listar_eventos", "agenda_criar_evento", "agenda_apagar_evento"]);
+});
+
+test("ferramentas de apagar devolvem o resultado de verdade", async () => {
+  const banco = novoBanco();
+  const f = criarFerramentas(banco);
+  const nota = await banco.adicionarNota("x");
+  assert.deepEqual(await f.executar("apagar_nota", { id: nota.id }), { apagada: true });
+  assert.deepEqual(await f.executar("apagar_nota", { id: nota.id }), { apagada: false });
+});

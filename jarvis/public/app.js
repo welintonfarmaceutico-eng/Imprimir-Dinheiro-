@@ -75,6 +75,7 @@ async function enviar(texto) {
     });
     adicionarMensagem(resposta, "jarvis");
     if (acoes?.length) atualizarPaineis();
+    if (acoes?.some((a) => a.startsWith("agenda_"))) atualizarAgenda();
     await falando.falar(resposta);
   } catch (erro) {
     adicionarMensagem(erro.message, "jarvis erro");
@@ -255,6 +256,48 @@ async function atualizarPaineis() {
   }
 }
 
+// ---------- Google Agenda ----------
+const botaoGoogle = $("botaoGoogle");
+const horaCurta = (iso) => new Date(iso).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+const diaCurto = (iso) => {
+  const d = new Date(iso), hoje = new Date();
+  const amanha = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate() + 1);
+  if (d.toDateString() === hoje.toDateString()) return "Hoje";
+  if (d.toDateString() === amanha.toDateString()) return "Amanhã";
+  return d.toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit" });
+};
+
+async function atualizarAgenda() {
+  const ul = $("listaAgenda");
+  try {
+    const status = await api("/api/google/status");
+    botaoGoogle.hidden = status.conectado;
+    if (!status.configurado) {
+      botaoGoogle.hidden = true;
+      preencherLista(ul, [], null, "Google Agenda ainda não configurado (veja o README).");
+      return;
+    }
+    if (!status.conectado) {
+      preencherLista(ul, [], null, "Conecte sua conta para o Jarvis ver e marcar compromissos.");
+      return;
+    }
+    const { eventos, erro } = await api("/api/agenda/hoje");
+    preencherLista(ul, eventos, (e) => li(e.titulo, `${diaCurto(e.inicio)}${e.diaInteiro ? " · dia inteiro" : ` · ${horaCurta(e.inicio)}`}${e.local ? ` · ${e.local}` : ""}`),
+      erro || 'Nada marcado. Ex.: "marca dentista sexta às 14h".');
+  } catch (erro) {
+    console.warn("Agenda:", erro.message);
+  }
+}
+
+botaoGoogle.addEventListener("click", async () => {
+  try {
+    const { url } = await api("/api/google/link", { method: "POST", body: "{}" });
+    location.href = url;
+  } catch (erro) {
+    adicionarMensagem(erro.message, "jarvis erro");
+  }
+});
+
 // ---------- Lembretes na hora certa ----------
 async function verificarLembretes() {
   try {
@@ -304,4 +347,6 @@ const saudacao = hora < 12 ? "Bom dia" : hora < 18 ? "Boa tarde" : "Boa noite";
 adicionarMensagem(`${saudacao}! Sou o Jarvis. Posso pesquisar na internet, anotar coisas, criar lembretes e cuidar das suas finanças. É só falar.`, "jarvis");
 definirEstado(null);
 atualizarPaineis();
+atualizarAgenda();
 verificarLembretes();
+setInterval(atualizarAgenda, 5 * 60 * 1000);

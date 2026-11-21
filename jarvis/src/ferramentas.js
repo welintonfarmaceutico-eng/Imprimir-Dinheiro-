@@ -8,7 +8,7 @@ const obj = (properties) => ({
   additionalProperties: false,
 });
 
-export function criarFerramentas(banco) {
+export function criarFerramentas(banco, agenda = null) {
   const ferramentas = [
     // ---------- Notas ----------
     {
@@ -33,7 +33,7 @@ export function criarFerramentas(banco) {
         description: "Apaga uma anotação pelo id. Use listar_notas antes para descobrir o id.",
         input_schema: obj({ id: { type: "string" } }),
       },
-      executar: ({ id }) => ({ apagada: banco.apagarNota(id) }),
+      executar: async ({ id }) => ({ apagada: await banco.apagarNota(id) }),
     },
 
     // ---------- Lembretes ----------
@@ -67,7 +67,7 @@ export function criarFerramentas(banco) {
         description: "Marca um lembrete como concluído pelo id.",
         input_schema: obj({ id: { type: "string" } }),
       },
-      executar: ({ id }) => ({ concluido: banco.concluirLembrete(id) }),
+      executar: async ({ id }) => ({ concluido: await banco.concluirLembrete(id) }),
     },
 
     // ---------- Finanças ----------
@@ -117,9 +117,48 @@ export function criarFerramentas(banco) {
         description: "Apaga uma transação pelo id. Use listar_transacoes antes para descobrir o id.",
         input_schema: obj({ id: { type: "string" } }),
       },
-      executar: ({ id }) => ({ apagada: banco.apagarTransacao(id) }),
+      executar: async ({ id }) => ({ apagada: await banco.apagarTransacao(id) }),
     },
   ];
+
+  // ---------- Google Agenda ----------
+  if (agenda) {
+    const dataHora = (descricao) => ({ type: "string", description: `${descricao} em ISO 8601 com fuso, ex.: 2026-11-21T15:30:00-03:00` });
+    ferramentas.push(
+      {
+        definicao: {
+          name: "agenda_listar_eventos",
+          description: "Lista os compromissos do Google Agenda do usuário entre duas datas/horas.",
+          input_schema: obj({ inicio: dataHora("Início do período"), fim: dataHora("Fim do período") }),
+        },
+        executar: ({ inicio, fim }) => agenda.listarEventos(inicio, fim),
+      },
+      {
+        definicao: {
+          name: "agenda_criar_evento",
+          description:
+            "Cria um compromisso no Google Agenda do usuário. Se ele não disser a duração, use 1 hora. " +
+            "Para lembrar o usuário na hora, use criar_lembrete; esta ferramenta é para compromissos da agenda.",
+          input_schema: obj({
+            titulo: { type: "string" },
+            inicio: dataHora("Início"),
+            fim: dataHora("Fim"),
+            local: { type: "string", description: "Local, ou string vazia" },
+            descricao: { type: "string", description: "Detalhes, ou string vazia" },
+          }),
+        },
+        executar: (input) => agenda.criarEvento(input),
+      },
+      {
+        definicao: {
+          name: "agenda_apagar_evento",
+          description: "Apaga um compromisso do Google Agenda pelo id. Use agenda_listar_eventos antes para achar o id e confirme com o usuário qual evento apagar.",
+          input_schema: obj({ id: { type: "string" } }),
+        },
+        executar: ({ id }) => agenda.apagarEvento(id),
+      },
+    );
+  }
 
   const porNome = new Map(ferramentas.map((f) => [f.definicao.name, f]));
 

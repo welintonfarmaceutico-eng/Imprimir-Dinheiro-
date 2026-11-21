@@ -11,6 +11,7 @@ Assistente pessoal que roda no navegador do celular e do PC. Você fala, ele res
 | Lembretes | "Me lembra de pagar a conta de luz amanhã às 9h". Na hora marcada, ele avisa em voz alta e manda uma notificação. |
 | Anotações | "Anota que a senha do wi-fi da loja é 1234" / "Quais são minhas notas?" |
 | Controle financeiro | "Gastei 35 reais no almoço" / "Recebi 2 mil de vendas" / "Quanto gastei este mês?" |
+| Google Agenda | "O que tenho amanhã?" / "Marca dentista sexta às 14h" / "Desmarca a reunião de quinta" |
 
 Os painéis laterais mostram os lembretes, as notas e o resumo financeiro do mês, e se atualizam sozinhos.
 
@@ -37,6 +38,7 @@ Depois abra **http://localhost:3000** no **Chrome** ou no **Edge** e permita o u
 | `JARVIS_ESFORCO` | `low` (padrão, mais rápido e barato) até `high` (pensa mais). |
 | `JARVIS_FUSO` | Fuso horário dos lembretes. O padrão é `America/Sao_Paulo`. |
 | `PORT` | Porta do servidor. O padrão é `3000`. |
+| `GOOGLE_CLIENT_ID` e `GOOGLE_CLIENT_SECRET` | Para ligar o Google Agenda (veja abaixo). |
 
 ## Publicar no Netlify (usar no celular de qualquer lugar)
 
@@ -58,6 +60,23 @@ No Chrome do Android, use *Adicionar à tela inicial* para ele abrir como um apl
 
 > O reconhecimento de voz funciona no Chrome, no Edge e no Chrome do Android. No iPhone (Safari) ele pode ser limitado. Nesse caso, digite; a resposta em voz funciona normalmente.
 
+## Ligar o Google Agenda
+
+A configuração é feita uma vez só, no Google Cloud, e leva uns 10 minutos.
+
+1. Acesse **console.cloud.google.com** e crie um projeto (por exemplo, "Jarvis").
+2. Em **APIs e serviços → Biblioteca**, procure **Google Calendar API** e clique em **Ativar**.
+3. Em **APIs e serviços → Tela de permissão OAuth** (ou **Google Auth Platform**):
+   - Tipo de usuário: **Externo**. Preencha o nome do app ("Jarvis") e o seu e-mail.
+   - Em **Público-alvo**, clique em **Publicar app** para colocá-lo **Em produção**. Em modo "Teste", o Google desconecta o Jarvis a cada 7 dias.
+4. Em **APIs e serviços → Credenciais → Criar credenciais → ID do cliente OAuth**:
+   - Tipo: **Aplicativo da Web**
+   - **URIs de redirecionamento autorizados**: `https://SEU-SITE.netlify.app/api/google/retorno`. Para usar no computador, adicione também `http://localhost:3000/api/google/retorno`.
+5. Copie o **ID do cliente** e a **Chave secreta do cliente** e crie as variáveis `GOOGLE_CLIENT_ID` e `GOOGLE_CLIENT_SECRET` no Netlify (marque a chave secreta como **secret**) ou no `.env`. No Netlify, faça um novo deploy depois.
+6. Abra o Jarvis e toque em **Conectar Google Agenda**. Na tela "O Google não verificou este app", toque em **Avançado → Acessar Jarvis**. É normal: o app é seu e só você usa.
+
+O Jarvis só pede acesso aos **eventos** da agenda. Para desconectar, remova o acesso em **myaccount.google.com/permissions**.
+
 ## Custos
 
 O Jarvis usa o modelo Claude Opus 5.5 (US$ 4 por milhão de tokens de entrada e US$ 20 por milhão de saída). Uma pergunta simples custa frações de centavo. As pesquisas na internet têm uma cobrança extra por busca. Para economizar, mantenha `JARVIS_ESFORCO=low` e use **Nova conversa** quando mudar de assunto.
@@ -75,6 +94,7 @@ jarvis/
 ├── src/ferramentas.js         # notas, lembretes e finanças (definições das ferramentas)
 ├── src/db.js                  # regras dos dados
 ├── src/armazem.js             # onde salva: arquivo local ou Netlify Blobs
+├── src/google.js              # conexão e acesso ao Google Agenda
 ├── public/                    # interface (HTML, CSS e JS com voz)
 └── test/                      # testes: npm test
 ```

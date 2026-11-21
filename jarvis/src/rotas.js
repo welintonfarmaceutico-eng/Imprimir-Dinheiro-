@@ -5,6 +5,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { Banco } from "./db.js";
 import { criarFerramentas } from "./ferramentas.js";
 import { Cerebro } from "./cerebro.js";
+import { GoogleAgenda } from "./google.js";
 
 const json = (dados, status = 200) => Response.json(dados, { status });
 const ID_VALIDO = /^[A-Za-z0-9-]{1,64}$/;
@@ -17,7 +18,8 @@ export function definirFuso() {
 export function criarJarvis(armazem, { senha = process.env.JARVIS_SENHA || "" } = {}) {
   definirFuso();
   const banco = new Banco(armazem);
-  const cerebro = new Cerebro(criarFerramentas(banco), banco);
+  const agenda = new GoogleAgenda(armazem);
+  const cerebro = new Cerebro(criarFerramentas(banco, agenda), banco);
 
   function autorizado(req) {
     if (!senha) return true;
@@ -56,11 +58,33 @@ export function criarJarvis(armazem, { senha = process.env.JARVIS_SENHA || "" } 
     }
   }
 
+  const paginaGoogle = (mensagem, ok) =>
+    new Response(
+      `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">` +
+        `<meta http-equiv="refresh" content="${ok ? 2 : 6};url=/"><body style="background:#03080f;color:#d6f6ff;font-family:sans-serif;padding:24px">` +
+        `<h2>${ok ? "Google Agenda conectado!" : "Não deu certo"}</h2><p>${mensagem}</p><p><a style="color:#00d4ff" href="/">Voltar ao Jarvis</a></p>`,
+      { status: ok ? 200 : 400, headers: { "content-type": "text/html; charset=utf-8" } },
+    );
+  const escapar = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+
   return async function tratar(req) {
-    const { pathname } = new URL(req.url);
-    const rota = `${req.method} ${pathname.replace(/\/+$/, "")}`;
+    const url = new URL(req.url);
+    const rota = `${req.method} ${url.pathname.replace(/\/+$/, "")}`;
 
     if (rota === "GET /api/status") return json({ ok: true, senha: Boolean(senha) });
+
+    // Volta do Google depois de autorizar. Não usa a senha do Jarvis: é protegida pelo "state" de uso único.
+    if (rota === "GET /api/google/retorno") {
+      if (url.searchParams.get("error")) return paginaGoogle("A permissão foi cancelada no Google.", false);
+      try {
+        await agenda.concluirConexao(url.searchParams.get("code"), url.searchParams.get("state"));
+        return paginaGoogle("Pode voltar e pedir: \"o que tenho na agenda amanhã?\"", true);
+      } catch (erro) {
+        console.error(erro);
+        return paginaGoogle(escapar(erro.message), false);
+      }
+    }
+
     if (!autorizado(req)) return json({ erro: "Senha incorreta" }, 401);
 
     switch (rota) {
@@ -79,6 +103,28 @@ export function criarJarvis(armazem, { senha = process.env.JARVIS_SENHA || "" } 
           banco.listarTransacoes({ limite: 10 }),
         ]);
         return json({ notas: notas.slice(0, 20), lembretes: lembretes.slice(0, 20), financas, transacoes });
+      }
+      case "GET /api/google/status":
+        return json({ configurado: agenda.configurado, conectado: agenda.configurado && (await agenda.conectado()) });
+      case "POST /api/google/link":
+        try {
+          return json({ url: await agenda.linkDeConexao(`${url.origin}/api/google/retorno`) });
+        } catch (erro) {
+          return json({ erro: erro.message }, 400);
+        }
+      case "POST /api/google/desconectar":
+        await agenda.desconectar();
+        return json({ ok: true });
+      case "GET /api/agenda/hoje": {
+        if (!agenda.configurado || !(await agenda.conectado())) return json({ conectado: false, eventos: [] });
+        const inicio = new Date();
+        inicio.setHours(0, 0, 0, 0);
+        const fim = new Date(inicio.getTime() + 2 * 24 * 60 * 60 * 1000); // hoje e amanhã
+        try {
+          return json({ conectado: true, eventos: await agenda.listarEventos(inicio, fim) });
+        } catch (erro) {
+          return json({ conectado: await agenda.conectado(), eventos: [], erro: erro.message });
+        }
       }
       case "GET /api/lembretes/vencidos":
         return json(await banco.lembretesVencidos());
