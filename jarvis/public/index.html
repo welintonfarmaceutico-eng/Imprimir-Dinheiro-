@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#03080f" />
+  <title>Jarvis</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" href="icone.svg" type="image/svg+xml" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700&family=Rajdhani:wght@400;500;600&display=swap" />
+  <link rel="stylesheet" href="estilo.css" />
+</head>
+<body>
+  <div class="grade"></div>
+
+  <header>
+    <div class="marca">J.A.R.V.I.S</div>
+    <div class="relogio" id="relogio">--:--</div>
+    <div class="controles">
+      <label class="chave" title="Fica ouvindo e responde quando você diz &quot;Jarvis&quot;">
+        <input type="checkbox" id="escutaContinua" /> <span>Escuta contínua</span>
+      </label>
+      <label class="chave" title="Responder em voz alta">
+        <input type="checkbox" id="vozLigada" checked /> <span>Voz</span>
+      </label>
+      <button class="botao-sec" id="novaConversa" title="Começar uma nova conversa">Nova conversa</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="painel" id="painelLembretes">
+      <h2>Lembretes</h2>
+      <ul id="listaLembretes" class="lista"></ul>
+      <h2>Notas</h2>
+      <ul id="listaNotas" class="lista"></ul>
+    </section>
+
+    <section class="centro">
+      <button class="reator" id="reator" aria-label="Falar com o Jarvis">
+        <span class="anel a1"></span><span class="anel a2"></span><span class="anel a3"></span>
+        <span class="nucleo"></span>
+      </button>
+      <div class="estado" id="estado">Toque no círculo e fale</div>
+
+      <div class="conversa" id="conversa" aria-live="polite"></div>
+
+      <form class="entrada" id="formulario">
+        <input id="texto" autocomplete="off" placeholder="Digite ou fale com o Jarvis..." />
+        <button type="submit" class="botao">Enviar</button>
+      </form>
+    </section>
+
+    <section class="painel" id="painelFinancas">
+      <h2>Finanças do mês</h2>
+      <div class="kpis">
+        <div class="kpi"><span>Entradas</span><strong id="kEntradas">R$ 0,00</strong></div>
+        <div class="kpi"><span>Saídas</span><strong id="kSaidas">R$ 0,00</strong></div>
+        <div class="kpi saldo"><span>Saldo</span><strong id="kSaldo">R$ 0,00</strong></div>
+      </div>
+      <div id="categorias" class="categorias"></div>
+      <h2>Últimas transações</h2>
+      <ul id="listaTransacoes" class="lista"></ul>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
