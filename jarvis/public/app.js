@@ -35,9 +35,13 @@ function definirEstado(estado, texto) {
   }[estado] ?? (el.escuta.checked ? 'Diga "Jarvis" para chamar' : "Toque no círculo e fale");
 }
 
+// Núcleo animado (partículas). O formato escolhido fica salvo no navegador.
+const nucleo = window.Nucleo ? Nucleo.criar($("nucleo"), { formato: guardar.ler("jarvis.formato", "neural") }) : null;
+
 // O círculo dá um "pulo" a cada palavra falada ou ouvida e volta devagar.
 let pulsoTimer = null;
 function pulsar(forca = 1.18) {
+  nucleo?.pulsar(forca);
   el.reator.style.setProperty("--pulso", String(forca));
   clearTimeout(pulsoTimer);
   pulsoTimer = setTimeout(() => el.reator.style.setProperty("--pulso", "1"), 140);
@@ -478,7 +482,30 @@ function aplicarTema(tema) {
   document.documentElement.dataset.tema = tema;
   guardar.escrever("jarvis.tema", tema);
   document.querySelector('meta[name="theme-color"]').content = getComputedStyle(document.documentElement).getPropertyValue("--fundo").trim();
-  document.querySelectorAll(".tema").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.opcao === tema)));
+  document.querySelectorAll(".tema:not(.formato)").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.opcao === tema)));
+  nucleo?.atualizarCores();
+  desenharMiniaturas();
+}
+
+// Formatos do núcleo, com miniaturas desenhadas na cor do tema.
+function desenharMiniaturas() {
+  if (!window.Nucleo || !$("dialogoAjustes").open) return;
+  document.querySelectorAll(".formato").forEach((b) => Nucleo.miniatura(b.querySelector("canvas"), b.dataset.formato));
+}
+function escolherFormato(formato) {
+  guardar.escrever("jarvis.formato", formato);
+  nucleo?.trocarFormato(formato);
+  document.querySelectorAll(".formato").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.formato === formato)));
+}
+if (window.Nucleo) {
+  for (const [id, nome] of Object.entries(Nucleo.FORMATOS)) {
+    const b = criar("button", { type: "button", className: "tema formato" });
+    b.dataset.formato = id;
+    b.append(criar("canvas"), document.createTextNode(nome));
+    b.addEventListener("click", () => escolherFormato(id));
+    $("formatos").append(b);
+  }
+  escolherFormato(guardar.ler("jarvis.formato", "neural"));
 }
 for (const [id, nome, cor] of TEMAS) {
   const b = criar("button", { type: "button", className: "tema" });
@@ -514,7 +541,7 @@ $("testarVoz").addEventListener("click", () => {
   falando.falar("Olá! Esta é a minha voz. Como posso ajudar?").then(() => definirEstado(null));
   el.voz.checked = ligada;
 });
-$("botaoAjustes").addEventListener("click", () => { preencherVozes(); $("dialogoAjustes").showModal(); });
+$("botaoAjustes").addEventListener("click", () => { preencherVozes(); $("dialogoAjustes").showModal(); desenharMiniaturas(); });
 
 // ---------- Google Agenda ----------
 const botaoGoogle = $("botaoGoogle");

@@ -5,8 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#03080f" />
   <title>Jarvis</title>
-  <link rel="manifest" href="manifest.json" />
+  <!-- use-credentials: com o login do Netlify ligado, sem isso o Chrome não consegue ler o manifest e o ícone vira uma letra -->
+  <link rel="manifest" href="manifest.json" crossorigin="use-credentials" />
   <link rel="icon" href="icone.svg" type="image/svg+xml" />
+  <link rel="icon" href="favicon-32.png" type="image/png" sizes="32x32" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700&family=Rajdhani:wght@400;500;600&display=swap" />
   <link rel="stylesheet" href="estilo.css" />
@@ -49,8 +52,8 @@
 
     <section class="centro">
       <button class="reator" id="reator" aria-label="Falar com o Jarvis">
-        <span class="anel a1"></span><span class="anel a2"></span><span class="anel a3"></span>
-        <span class="nucleo"></span>
+        <span class="anel a1"></span><span class="anel a2"></span>
+        <canvas class="nucleo-canvas" id="nucleo" aria-hidden="true"></canvas>
       </button>
       <div class="estado" id="estado">Toque no círculo e fale</div>
 
@@ -95,6 +98,8 @@
       <div class="campos">
         <label><span>Tema</span></label>
         <div class="temas" id="temas"></div>
+        <label><span>Formato do núcleo</span></label>
+        <div class="temas formatos" id="formatos"></div>
         <label><span>Voz</span>
           <select id="escolhaVoz"><option value="">Automática</option></select>
         </label>
@@ -107,6 +112,7 @@
     </form>
   </dialog>
 
+  <script src="nucleo.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
