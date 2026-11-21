@@ -56,6 +56,7 @@ header {
 }
 .botao-sec { background: transparent; color: var(--ciano-claro); padding: 6px 12px; }
 .botao:hover { box-shadow: 0 0 14px var(--ciano); }
+.botao-google { width: 100%; margin-top: 8px; }
 
 main {
   position: relative;
