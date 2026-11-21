@@ -87,7 +87,7 @@ Os avisos usam o **CallMeBot**, um serviço gratuito que manda mensagens para o 
 2. Salve esse número nos contatos do celular e mande para ele, pelo WhatsApp, a mensagem que a página indicar (algo como "I allow callmebot to send me messages").
 3. Em alguns segundos você recebe a sua **apikey**.
 4. No Netlify, crie as variáveis:
-   - `WHATSAPP_TELEFONE`: seu número com DDI e DDD, ex.: `+5531999998888`
+   - `WHATSAPP_TELEFONE`: seu número **exatamente como aparece na mensagem de ativação do robô**, com DDI e DDD, ex.: `+553199998888`. Atenção: muitos números do Brasil estão registrados no WhatsApp **sem o 9 extra**. Se o número tiver um 9 a mais ou a menos, o CallMeBot responde "APIKey is invalid".
    - `WHATSAPP_APIKEY`: a apikey recebida (marque como **secret**)
 5. Faça um novo deploy e toque em **Testar aviso no WhatsApp** na tela do Jarvis.
 
@@ -96,6 +96,13 @@ A cada minuto, a função agendada `lembretes-whatsapp` confere os lembretes que
 ## Custos
 
 O Jarvis usa o modelo Claude Opus 5.5 (US$ 4 por milhão de tokens de entrada e US$ 20 por milhão de saída). Uma pergunta simples custa frações de centavo. As pesquisas na internet têm uma cobrança extra por busca. Para economizar, mantenha `JARVIS_ESFORCO=low` e use **Nova conversa** quando mudar de assunto.
+
+Para não precisar ficar de olho no saldo, em **console.anthropic.com → Settings**:
+- **Billing → Auto-reload**: recarrega sozinho quando o saldo fica baixo.
+- **Limits**: define um teto de gasto por mês.
+- **Usage**: mostra quanto foi gasto por dia.
+
+Se os créditos acabarem ou o teto do mês for atingido, o Jarvis avisa na tela e, se o WhatsApp estiver configurado, manda um aviso por lá (no máximo uma vez por dia).
 
 Se o modelo recusar um pedido por engano, o próprio servidor da Anthropic tenta de novo automaticamente com outro modelo (opção `fallbacks: "default"` em `src/cerebro.js`).
 
