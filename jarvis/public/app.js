@@ -43,14 +43,18 @@ async function api(caminho, opcoes = {}) {
     ...opcoes,
     headers: { "Content-Type": "application/json", "x-jarvis-senha": senha, ...(opcoes.headers || {}) },
   });
+  const dados = await resp.json().catch(() => ({}));
   if (resp.status === 401) {
+    // 401 sem a nossa mensagem = bloqueio do login do Netlify (sessão expirada).
+    if (dados.erro !== "Senha incorreta") {
+      throw new Error("Seu login expirou. Recarregue a página e entre de novo na sua conta do Netlify.");
+    }
     const nova = prompt("Senha do Jarvis:");
     if (nova === null) throw new Error("Senha necessária.");
     senha = nova;
     guardar.escrever("jarvis.senha", senha);
     return api(caminho, opcoes);
   }
-  const dados = await resp.json().catch(() => ({}));
   if (!resp.ok) throw new Error(dados.erro || `Erro ${resp.status}`);
   return dados;
 }
