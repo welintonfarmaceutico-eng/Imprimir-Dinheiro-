@@ -5,7 +5,12 @@ const el = {
   reator: $("reator"), escuta: $("escutaContinua"), voz: $("vozLigada"), nova: $("novaConversa"),
 };
 
-const PALAVRA_CHAVE = /\bjarvis\b[,.!?\s]*/i;
+// O reconhecimento de voz do Google costuma escrever "Jarvis" de outros jeitos ("Jarbas", "Chaves"...).
+const PALAVRA_CHAVE = /(?<!\p{L})(?:jarvis|járvis|jarvi|jarves|jarviz|jarbas|jarbs|garvis|djarvis)(?!\p{L})[,.!?\s]*/iu;
+// "Chaves" e parecidos só contam no começo da frase (para não confundir com "as chaves de casa").
+const PALAVRA_CHAVE_INICIO = /^\s*(?:chaves|xaves|chavis|charvis|chárvis)(?!\p{L})[,.!?\s]*/iu;
+const acharChamado = (frase) => PALAVRA_CHAVE.exec(frase) || PALAVRA_CHAVE_INICIO.exec(frase);
+const tirarChamado = (frase) => frase.replace(PALAVRA_CHAVE_INICIO, "").replace(PALAVRA_CHAVE, "");
 const moeda = (v) => Number(v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
 // ---------- Preferências guardadas no navegador ----------
@@ -229,6 +234,7 @@ let conversaAbertaAte = 0;
 let parcialPendente = "";         // o que já foi ouvido mas o navegador ainda não deu como final
 let pausaTimer = null;
 let paradoPorPausa = false;
+let avisouRede = false;
 
 const conversaAberta = () => Date.now() < conversaAbertaAte;
 
@@ -240,13 +246,13 @@ function processarFrase(frase) {
   if (!el.escuta.checked || esperandoComando || conversaAberta()) {
     esperandoComando = false;
     conversaAbertaAte = 0;
-    enviar(frase.replace(PALAVRA_CHAVE, ""));
+    enviar(tirarChamado(frase));
     return;
   }
   // Escuta contínua: só responde quando ouvir "Jarvis".
-  const pos = frase.search(PALAVRA_CHAVE);
-  if (pos === -1) return;
-  const pedido = frase.slice(pos).replace(PALAVRA_CHAVE, "").trim();
+  const chamado = acharChamado(frase);
+  if (!chamado) return;
+  const pedido = frase.slice(chamado.index + chamado[0].length).trim();
   if (pedido) enviar(pedido);
   else { esperandoComando = true; definirEstado("ouvindo", "Pois não?"); bip(); }
 }
@@ -285,6 +291,12 @@ function criarReconhecimento() {
     if (e.error === "not-allowed" || e.error === "service-not-allowed") {
       el.escuta.checked = false;
       adicionarMensagem("Permita o uso do microfone no navegador para falar com o Jarvis.", "aviso");
+    } else if (e.error === "audio-capture") {
+      el.escuta.checked = false;
+      adicionarMensagem("Não achei nenhum microfone. Confira se ele está ligado e escolhido no Windows (Configurações → Som → Entrada).", "aviso");
+    } else if (e.error === "network" && !avisouRede) {
+      avisouRede = true; // o reconhecimento de voz do Chrome precisa de internet
+      adicionarMensagem("O reconhecimento de voz ficou sem internet. Vou continuar tentando.", "aviso");
     }
   };
   r.onend = () => {
