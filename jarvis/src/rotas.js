@@ -6,6 +6,7 @@ import { Banco } from "./db.js";
 import { criarFerramentas } from "./ferramentas.js";
 import { Cerebro } from "./cerebro.js";
 import { GoogleAgenda } from "./google.js";
+import { WhatsApp, enviarLembretesVencidos } from "./whatsapp.js";
 
 const json = (dados, status = 200) => Response.json(dados, { status });
 const ID_VALIDO = /^[A-Za-z0-9-]{1,64}$/;
@@ -19,7 +20,8 @@ export function criarJarvis(armazem, { senha = process.env.JARVIS_SENHA || "" } 
   definirFuso();
   const banco = new Banco(armazem);
   const agenda = new GoogleAgenda(armazem);
-  const cerebro = new Cerebro(criarFerramentas(banco, agenda), banco);
+  const whatsapp = new WhatsApp();
+  const cerebro = new Cerebro(criarFerramentas(banco, agenda, whatsapp), banco);
 
   function autorizado(req) {
     if (!senha) return true;
@@ -126,10 +128,24 @@ export function criarJarvis(armazem, { senha = process.env.JARVIS_SENHA || "" } 
           return json({ conectado: await agenda.conectado(), eventos: [], erro: erro.message });
         }
       }
+      case "GET /api/whatsapp/status":
+        return json({ configurado: whatsapp.configurado });
+      case "POST /api/whatsapp/teste":
+        try {
+          return json(await whatsapp.enviar("✅ Teste do Jarvis: os lembretes vão chegar aqui."));
+        } catch (erro) {
+          return json({ erro: erro.message }, 400);
+        }
       case "GET /api/lembretes/vencidos":
         return json(await banco.lembretesVencidos());
       default:
         return json({ erro: "Rota não encontrada" }, 404);
     }
   };
+}
+
+// Usada a cada minuto (função agendada do Netlify, ou o relógio do servidor local).
+export async function verificarLembretesWhatsApp(armazem) {
+  definirFuso();
+  return enviarLembretesVencidos(new Banco(armazem), armazem, new WhatsApp());
 }

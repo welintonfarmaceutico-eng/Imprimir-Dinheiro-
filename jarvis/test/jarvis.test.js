@@ -228,3 +228,54 @@ test("ferramentas de apagar devolvem o resultado de verdade", async () => {
   assert.deepEqual(await f.executar("apagar_nota", { id: nota.id }), { apagada: true });
   assert.deepEqual(await f.executar("apagar_nota", { id: nota.id }), { apagada: false });
 });
+
+// ---------- WhatsApp (CallMeBot simulado) ----------
+import { WhatsApp, enviarLembretesVencidos } from "../src/whatsapp.js";
+
+function callmebotFalso(resposta = "Message queued. You will receive it in a few seconds.", status = 200) {
+  const enviados = [];
+  const f = async (url) => {
+    const u = new URL(url);
+    enviados.push({ telefone: u.searchParams.get("phone"), texto: u.searchParams.get("text"), apikey: u.searchParams.get("apikey") });
+    return new Response(resposta, { status });
+  };
+  return { f, enviados };
+}
+
+test("whatsapp: envia lembrete vencido uma vez só e ignora antigos e futuros", async () => {
+  const armazem = new ArmazemBlobs(blobsFalso());
+  const banco = new Banco(armazem);
+  const cb = callmebotFalso();
+  const zap = new WhatsApp({ fetch: cb.f, env: { WHATSAPP_TELEFONE: "+55 (31) 99999-8888", WHATSAPP_APIKEY: " 123456 " } });
+  const agora = new Date("2026-11-21T12:00:00Z");
+  await banco.adicionarLembrete("beber água", "2026-11-21T11:59:00Z");   // acabou de vencer
+  await banco.adicionarLembrete("antigo", "2026-11-21T09:00:00Z");       // venceu há horas
+  await banco.adicionarLembrete("futuro", "2026-11-21T13:00:00Z");
+
+  assert.deepEqual(await enviarLembretesVencidos(banco, armazem, zap, agora), { enviados: 1 });
+  assert.deepEqual(cb.enviados, [{ telefone: "+5531999998888", texto: "⏰ Lembrete do Jarvis: beber água", apikey: "123456" }]);
+  assert.deepEqual(await enviarLembretesVencidos(banco, armazem, zap, agora), { enviados: 0 }); // não repete
+
+  // O aviso do navegador continua funcionando, separado do WhatsApp.
+  assert.equal((await banco.lembretesVencidos(agora)).length, 2);
+});
+
+test("whatsapp: erro do serviço não marca como enviado; sem configuração não faz nada", async () => {
+  const armazem = new ArmazemBlobs(blobsFalso());
+  const banco = new Banco(armazem);
+  const agora = new Date("2026-11-21T12:00:00Z");
+  await banco.adicionarLembrete("x", "2026-11-21T11:59:00Z");
+  const ruim = new WhatsApp({ fetch: callmebotFalso("APIKey is invalid").f, env: { WHATSAPP_TELEFONE: "+55", WHATSAPP_APIKEY: "1" } });
+  assert.deepEqual(await enviarLembretesVencidos(banco, armazem, ruim, agora), { enviados: 0 });
+  const bom = new WhatsApp({ fetch: callmebotFalso().f, env: { WHATSAPP_TELEFONE: "+55", WHATSAPP_APIKEY: "1" } });
+  assert.deepEqual(await enviarLembretesVencidos(banco, armazem, bom, agora), { enviados: 1 }); // tenta de novo depois
+  assert.deepEqual(await enviarLembretesVencidos(banco, armazem, new WhatsApp({ env: {} }), agora), { enviados: 0 });
+});
+
+test("whatsapp: ferramenta só aparece quando configurado", () => {
+  const banco = novoBanco();
+  const sem = criarFerramentas(banco, null, new WhatsApp({ env: {} })).definicoes.map((d) => d.name);
+  const com = criarFerramentas(banco, null, new WhatsApp({ env: { WHATSAPP_TELEFONE: "+55", WHATSAPP_APIKEY: "1" } })).definicoes.map((d) => d.name);
+  assert.ok(!sem.includes("enviar_whatsapp"));
+  assert.ok(com.includes("enviar_whatsapp"));
+});
