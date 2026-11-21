@@ -6,7 +6,7 @@ Assistente pessoal que roda no navegador do celular e do PC. Você fala, ele res
 
 | Função | Exemplo de pedido |
 |---|---|
-| Conversar por voz | Toque no círculo e fale. Ou ative **Escuta contínua** e diga "Jarvis, ..." |
+| Conversar por voz | Toque no círculo e fale. Ou ative **Escuta contínua** e diga "Jarvis, ...". Depois que ele responde, você tem 10 segundos para continuar a conversa sem repetir "Jarvis". Uma pausa de 1,5 segundo encerra a frase. |
 | Pesquisar na internet | "Jarvis, qual a cotação do dólar hoje?" / "Como vai estar o tempo amanhã em BH?" |
 | Lembretes | "Me lembra de pagar a conta de luz amanhã às 9h". Na hora marcada, ele avisa em voz alta e manda uma notificação. |
 | Anotações | "Anota que a senha do wi-fi da loja é 1234" / "Quais são minhas notas?" |

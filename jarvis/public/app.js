@@ -156,7 +156,12 @@ async function enviar(texto) {
     await falando.terminar();
     ocupado = false;
     definirEstado(null);
-    if (el.escuta.checked) comecarAOuvir();
+    if (el.escuta.checked) {
+      // Conversa aberta: dá para responder de volta sem dizer "Jarvis" de novo.
+      conversaAbertaAte = Date.now() + JANELA_CONVERSA_MS;
+      setTimeout(() => { if (ouvindo && !ocupado && !esperandoComando && !conversaAberta()) definirEstado("ouvindo", 'Diga "Jarvis"...'); }, JANELA_CONVERSA_MS + 100);
+      comecarAOuvir();
+    }
   }
 }
 
@@ -211,9 +216,36 @@ if ("speechSynthesis" in window) {
 
 // ---------- Escuta (voz para texto) ----------
 const Reconhecimento = window.SpeechRecognition || window.webkitSpeechRecognition;
+const JANELA_CONVERSA_MS = 10000; // depois de responder, ouve sem precisar do "Jarvis" por 10 s
+const PAUSA_MS = 1500;            // 1,5 s sem falar = frase terminada
 let reconhecimento = null;
 let ouvindo = false;
-let esperandoComando = false; // ouviu "Jarvis" sozinho e aguarda o pedido
+let esperandoComando = false;     // ouviu "Jarvis" sozinho e aguarda o pedido
+let conversaAbertaAte = 0;
+let parcialPendente = "";         // o que já foi ouvido mas o navegador ainda não deu como final
+let pausaTimer = null;
+let paradoPorPausa = false;
+
+const conversaAberta = () => Date.now() < conversaAbertaAte;
+
+function processarFrase(frase) {
+  frase = frase.trim();
+  el.texto.value = "";
+  if (!frase) return;
+  // Sem escuta contínua, logo depois de "Jarvis", ou com a conversa aberta: não precisa da palavra-chave.
+  if (!el.escuta.checked || esperandoComando || conversaAberta()) {
+    esperandoComando = false;
+    conversaAbertaAte = 0;
+    enviar(frase.replace(PALAVRA_CHAVE, ""));
+    return;
+  }
+  // Escuta contínua: só responde quando ouvir "Jarvis".
+  const pos = frase.search(PALAVRA_CHAVE);
+  if (pos === -1) return;
+  const pedido = frase.slice(pos).replace(PALAVRA_CHAVE, "").trim();
+  if (pedido) enviar(pedido);
+  else { esperandoComando = true; definirEstado("ouvindo", "Pois não?"); bip(); }
+}
 
 function criarReconhecimento() {
   const r = new Reconhecimento();
@@ -228,21 +260,22 @@ function criarReconhecimento() {
       const t = evento.results[i][0].transcript;
       if (evento.results[i].isFinal) final += t; else parcial += t;
     }
-    if (parcial) el.texto.value = parcial;
-    if (!final) return;
-    el.texto.value = "";
-
-    if (!el.escuta.checked || esperandoComando) {
-      esperandoComando = false;
-      enviar(final.replace(PALAVRA_CHAVE, ""));
+    clearTimeout(pausaTimer);
+    if (final) {
+      parcialPendente = "";
+      processarFrase(final);
       return;
     }
-    // Escuta contínua: só responde quando ouvir "Jarvis".
-    const pos = final.search(PALAVRA_CHAVE);
-    if (pos === -1) return;
-    const pedido = final.slice(pos).replace(PALAVRA_CHAVE, "").trim();
-    if (pedido) enviar(pedido);
-    else { esperandoComando = true; definirEstado("ouvindo", "Pois não?"); bip(); }
+    if (parcial) {
+      el.texto.value = parcial;
+      parcialPendente = parcial;
+      // Alguns celulares demoram (ou nunca) para dar a frase como terminada: a pausa resolve.
+      pausaTimer = setTimeout(() => {
+        if (!parcialPendente) return;
+        paradoPorPausa = true;
+        try { r.stop(); } catch {}
+      }, PAUSA_MS);
+    }
   };
   r.onerror = (e) => {
     if (e.error === "not-allowed" || e.error === "service-not-allowed") {
@@ -251,7 +284,16 @@ function criarReconhecimento() {
     }
   };
   r.onend = () => {
+    clearTimeout(pausaTimer);
     ouvindo = false;
+    // Parou pela pausa e o navegador não entregou a frase final: usa o que já tinha ouvido.
+    if (paradoPorPausa && parcialPendente) {
+      const frase = parcialPendente;
+      parcialPendente = "";
+      processarFrase(frase);
+    }
+    paradoPorPausa = false;
+    parcialPendente = "";
     if (!ocupado) definirEstado(null);
     // No modo contínuo, o navegador encerra sozinho de tempos em tempos: reinicia.
     if (el.escuta.checked && !ocupado) setTimeout(comecarAOuvir, 300);
@@ -271,7 +313,8 @@ function comecarAOuvir() {
   try {
     reconhecimento.start();
     ouvindo = true;
-    definirEstado("ouvindo", el.escuta.checked && !esperandoComando ? 'Diga "Jarvis"...' : "Ouvindo...");
+    const aviso = !el.escuta.checked || esperandoComando ? "Ouvindo..." : conversaAberta() ? "Pode continuar..." : 'Diga "Jarvis"...';
+    definirEstado("ouvindo", aviso);
   } catch { /* já estava ouvindo */ }
 }
 
