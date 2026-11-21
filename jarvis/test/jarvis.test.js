@@ -279,3 +279,30 @@ test("whatsapp: ferramenta só aparece quando configurado", () => {
   assert.ok(!sem.includes("enviar_whatsapp"));
   assert.ok(com.includes("enviar_whatsapp"));
 });
+
+// ---------- Mensagens de erro (crédito, limite de gasto) ----------
+import Anthropic from "@anthropic-ai/sdk";
+import { explicarErro } from "../src/rotas.js";
+
+test("erros: crédito acabado e limite de gasto viram mensagens claras", () => {
+  const gerar = (status, corpo) => Anthropic.APIError.generate(status, { type: "error", error: corpo }, undefined, new Headers());
+
+  const pagamento = explicarErro(gerar(402, { type: "billing_error", message: "x" }));
+  assert.equal(pagamento.credito, true);
+  assert.match(pagamento.mensagem, /créditos da Anthropic acabaram/);
+
+  const saldo = explicarErro(gerar(400, { type: "invalid_request_error", message: "Your credit balance is too low to access the Anthropic API." }));
+  assert.equal(saldo.credito, true);
+  assert.match(saldo.mensagem, /créditos/);
+
+  const teto = explicarErro(gerar(429, { type: "rate_limit_error", message: "m", details: { error_code: "enforced_spend_limit_reached" } }));
+  assert.equal(teto.credito, true);
+  assert.match(teto.mensagem, /limite de gasto/);
+
+  const rapido = explicarErro(gerar(429, { type: "rate_limit_error", message: "m" }));
+  assert.ok(!rapido.credito);
+  assert.match(rapido.mensagem, /Muitas perguntas/);
+
+  assert.match(explicarErro(gerar(529, { type: "overloaded_error", message: "m" })).mensagem, /ocupado/);
+  assert.match(explicarErro(gerar(400, { type: "invalid_request_error", message: "outra coisa" })).mensagem, /problema para pensar/);
+});

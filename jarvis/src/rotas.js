@@ -16,6 +16,34 @@ export function definirFuso() {
   process.env.TZ = process.env.JARVIS_FUSO || "America/Sao_Paulo";
 }
 
+// Traduz os erros da API da Anthropic em mensagens claras.
+// "credito: true" quando o problema é saldo ou limite de gasto (para avisar no WhatsApp).
+export function explicarErro(erro) {
+  const semChave = !process.env.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_AUTH_TOKEN;
+  if (erro instanceof Anthropic.AuthenticationError || (semChave && !(erro instanceof Anthropic.APIError))) {
+    return { mensagem: "A chave da API da Anthropic está faltando ou é inválida." };
+  }
+  if (erro instanceof Anthropic.APIError) {
+    // Sem crédito: 402 billing_error, ou 400 com "credit balance is too low" (para esse caso a API não tem código próprio).
+    if (erro.status === 402 || erro.type === "billing_error" || /credit balance/i.test(erro.apiMessage ?? erro.message)) {
+      return {
+        credito: true,
+        mensagem: "Seus créditos da Anthropic acabaram. Recarregue em console.anthropic.com, em Settings, Billing.",
+      };
+    }
+    if (erro.errorCode === "enforced_spend_limit_reached") {
+      return {
+        credito: true,
+        mensagem: "O limite de gasto do mês da Anthropic foi atingido. Aumente o limite em console.anthropic.com, em Settings, Limits.",
+      };
+    }
+  }
+  if (erro instanceof Anthropic.RateLimitError) return { mensagem: "Muitas perguntas seguidas. Espere um pouco e tente de novo." };
+  if (erro instanceof Anthropic.APIConnectionError) return { mensagem: "Não consegui me conectar ao servidor da IA." };
+  if (erro instanceof Anthropic.InternalServerError) return { mensagem: "O servidor da IA está ocupado agora. Tente de novo em instantes." };
+  return { mensagem: "Tive um problema para pensar agora. Tente de novo em instantes." };
+}
+
 export function criarJarvis(armazem, { senha = process.env.JARVIS_SENHA || "" } = {}) {
   definirFuso();
   const banco = new Banco(armazem);
@@ -47,16 +75,22 @@ export function criarJarvis(armazem, { senha = process.env.JARVIS_SENHA || "" } 
       return json(await cerebro.conversar(conversa, texto.trim().slice(0, 4000)));
     } catch (erro) {
       console.error(erro);
-      const semChave = !process.env.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_AUTH_TOKEN;
-      let mensagem = "Tive um problema para pensar agora. Tente de novo em instantes.";
-      if (erro instanceof Anthropic.AuthenticationError || (semChave && !(erro instanceof Anthropic.APIError))) {
-        mensagem = "A chave da API da Anthropic está faltando ou é inválida.";
-      } else if (erro instanceof Anthropic.RateLimitError) {
-        mensagem = "Muitas perguntas seguidas. Espere um pouco e tente de novo.";
-      } else if (erro instanceof Anthropic.APIConnectionError) {
-        mensagem = "Não consegui me conectar ao servidor da IA.";
-      }
+      const { mensagem, credito } = explicarErro(erro);
+      if (credito) await avisarCreditoNoWhatsApp(mensagem);
       return json({ erro: mensagem }, 500);
+    }
+  }
+
+  // Avisa no WhatsApp que o crédito acabou, no máximo uma vez a cada 24 horas.
+  async function avisarCreditoNoWhatsApp(mensagem) {
+    if (!whatsapp.configurado) return;
+    try {
+      const ultimo = await armazem.obter("config", "aviso-credito");
+      if (ultimo && Date.now() - ultimo.em < 24 * 60 * 60 * 1000) return;
+      await whatsapp.enviar(`⚠️ Jarvis: ${mensagem}`);
+      await armazem.salvar("config", "aviso-credito", { em: Date.now() });
+    } catch (e) {
+      console.error("Aviso de crédito no WhatsApp:", e.message);
     }
   }
 
