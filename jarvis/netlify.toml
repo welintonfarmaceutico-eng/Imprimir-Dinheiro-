@@ -1,0 +1,7 @@
+# Configuração do Netlify (defina "jarvis" como Base directory se ligar pelo GitHub)
+[build]
+  publish = "public"
+  functions = "netlify/functions"
+
+[functions]
+  node_bundler = "esbuild"
