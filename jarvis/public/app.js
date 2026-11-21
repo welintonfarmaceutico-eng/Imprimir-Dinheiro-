@@ -569,7 +569,7 @@ $("baixarPc").addEventListener("click", async () => {
     document.body.append(link);
     link.click();
     link.remove();
-    mostrarStatusPc("Baixado! No computador: clique com o botão direito no arquivo, Propriedades, marque Desbloquear e OK. Depois, botão direito, Executar com o PowerShell.", "ok");
+    mostrarStatusPc("Baixado! No computador: aperte Windows + R, digite powershell e Enter. Na janela, digite: powershell -ExecutionPolicy Bypass -File e arraste o arquivo baixado para dentro dela. Aperte Enter.", "ok");
     $("desconectarPc").hidden = false;
     $("testarPc").disabled = false;
   } catch (erro) {

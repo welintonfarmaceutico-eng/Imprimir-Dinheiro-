@@ -37,7 +37,13 @@ export class ArmazemArquivo {
 
 export class ArmazemBlobs {
   constructor(getStore, nome = "jarvis") {
-    this.store = getStore({ name: nome, consistency: "strong" });
+    this.getStore = getStore;
+    this.nome = nome;
+  }
+  // Abre a "gaveta" a cada uso: o Netlify reaproveita o servidor entre pedidos, e o passe
+  // de acesso de um pedido antigo vence ("Token expired"). Cada uso pega o passe atual.
+  get store() {
+    return this.getStore({ name: this.nome, consistency: "strong" });
   }
   async listar(colecao) {
     const { blobs } = await this.store.list({ prefix: `${colecao}/` });

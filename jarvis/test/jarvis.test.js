@@ -489,3 +489,13 @@ test("pc: ferramenta e rotas do computador", async () => {
   assert.deepEqual(await (await req("POST", "/api/pc/desconectar")).json(), { ok: true });
   assert.deepEqual(await (await req("GET", "/api/pc/status")).json(), { conectado: false });
 });
+
+test("blobs: abre a gaveta de novo a cada uso (o passe de acesso vence entre pedidos)", async () => {
+  let aberturas = 0;
+  const fabrica = blobsFalso();
+  const armazem = new ArmazemBlobs((opcoes) => { aberturas++; return fabrica(opcoes); });
+  await armazem.salvar("notas", "a", { id: "a" });
+  await armazem.obter("notas", "a");
+  await armazem.listar("notas");
+  assert.ok(aberturas >= 3, `abriu ${aberturas} vez(es)`);
+});

@@ -106,9 +106,14 @@ A cada minuto, a função agendada `lembretes-whatsapp` confere os lembretes que
 Um programa pequeno em PowerShell, que já vem no Windows, recebe as ordens do Jarvis e as executa no computador.
 
 1. No Jarvis, abra **⚙ Ajustes → Computador** e toque em **Baixar programa do PC**. O arquivo `jarvis-pc.ps1` já vem com a sua chave secreta.
-2. No computador, clique com o botão direito no arquivo → **Propriedades** → marque **Desbloquear** → **OK**.
-3. Clique com o botão direito de novo → **Executar com o PowerShell**. No Windows 11, essa opção fica em "Mostrar mais opções".
+2. No computador, aperte **Windows + R**, digite `powershell` e aperte **Enter**.
+3. Na janela do PowerShell, rode o comando abaixo, trocando o caminho pelo do arquivo baixado. Também dá para digitar o começo do comando e arrastar o arquivo para dentro da janela:
+   ```
+   powershell -ExecutionPolicy Bypass -File "C:\Users\SEU_USUARIO\Downloads\jarvis-pc.ps1"
+   ```
 4. Aparece a mensagem "Jarvis PC instalado e conectado!". A partir daí, ele inicia sozinho junto com o Windows.
+
+O botão direito → "Executar com o PowerShell" pode não funcionar: em alguns PCs a janela fecha antes de instalar.
 
 Como funciona:
 - As ordens passam pelo **ntfy.sh**, um serviço gratuito de mensagens. O PC recebe na hora, sem consultar o Netlify o tempo todo.
