@@ -1,0 +1,59 @@
+// Onde os dados ficam guardados. Cada item é um registro separado, por coleção.
+//  - ArmazemArquivo: arquivo JSON no disco (rodando no seu computador)
+//  - ArmazemBlobs:   Netlify Blobs (rodando no Netlify)
+import fs from "node:fs";
+import path from "node:path";
+
+export class ArmazemArquivo {
+  constructor(arquivo) {
+    this.arquivo = arquivo;
+    this.dados = fs.existsSync(arquivo) ? JSON.parse(fs.readFileSync(arquivo, "utf8")) : {};
+  }
+
+  #gravar() {
+    fs.mkdirSync(path.dirname(this.arquivo), { recursive: true });
+    const tmp = `${this.arquivo}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(this.dados, null, 2));
+    fs.renameSync(tmp, this.arquivo); // escrita atômica
+  }
+
+  async listar(colecao) {
+    return Object.values(this.dados[colecao] || {});
+  }
+  async obter(colecao, id) {
+    return this.dados[colecao]?.[id] ?? null;
+  }
+  async salvar(colecao, id, valor) {
+    (this.dados[colecao] ||= {})[id] = valor;
+    this.#gravar();
+  }
+  async apagar(colecao, id) {
+    if (!this.dados[colecao]?.[id]) return false;
+    delete this.dados[colecao][id];
+    this.#gravar();
+    return true;
+  }
+}
+
+export class ArmazemBlobs {
+  constructor(getStore, nome = "jarvis") {
+    this.store = getStore({ name: nome, consistency: "strong" });
+  }
+  async listar(colecao) {
+    const { blobs } = await this.store.list({ prefix: `${colecao}/` });
+    const itens = await Promise.all(blobs.map((b) => this.store.get(b.key, { type: "json" })));
+    return itens.filter(Boolean);
+  }
+  async obter(colecao, id) {
+    return this.store.get(`${colecao}/${id}`, { type: "json" });
+  }
+  async salvar(colecao, id, valor) {
+    await this.store.setJSON(`${colecao}/${id}`, valor);
+  }
+  async apagar(colecao, id) {
+    const existe = await this.obter(colecao, id);
+    if (!existe) return false;
+    await this.store.delete(`${colecao}/${id}`);
+    return true;
+  }
+}

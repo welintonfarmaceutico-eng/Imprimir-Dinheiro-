@@ -29,10 +29,10 @@ Regras:
 }
 
 export class Cerebro {
-  constructor(ferramentas) {
+  constructor(ferramentas, banco) {
     this.cliente = new Anthropic();
     this.ferramentas = ferramentas;
-    this.conversas = new Map(); // id -> histórico de mensagens
+    this.banco = banco; // guarda o histórico das conversas
     this.sistema = promptDeSistema(); // fixo: mantém o cache de prompt
     this.tools = [
       { type: "web_search_20260209", name: "web_search", max_uses: 5, user_location: { type: "approximate", country: "BR", timezone: process.env.TZ } },
@@ -40,13 +40,8 @@ export class Cerebro {
     ];
   }
 
-  historico(id) {
-    if (!this.conversas.has(id)) this.conversas.set(id, []);
-    return this.conversas.get(id);
-  }
-
-  limpar(id) {
-    this.conversas.delete(id);
+  async limpar(id) {
+    await this.banco.apagarConversa(id);
   }
 
   agora() {
@@ -63,65 +58,64 @@ export class Cerebro {
 
   // Envia uma mensagem e devolve { texto, acoes }.
   async conversar(id, textoUsuario) {
-    const mensagens = this.historico(id);
-    const inicio = mensagens.length;
+    const mensagens = await this.banco.obterConversa(id);
     mensagens.push({ role: "user", content: `[Agora: ${this.agora()}]\n${textoUsuario}` });
     const acoes = []; // ferramentas usadas, para a interface atualizar os painéis
 
-    try {
-      for (let volta = 0; volta < MAX_VOLTAS; volta++) {
-        const resposta = await this.cliente.beta.messages.create({
-          model: MODELO,
-          max_tokens: 16000,
-          system: this.sistema,
-          tools: this.tools,
-          messages: mensagens,
-          output_config: { effort: ESFORCO },
-          cache_control: { type: "ephemeral" },
-          // Se o modelo recusar por engano, o próprio servidor tenta outro modelo.
-          betas: ["server-side-fallback-2026-07-01", "compact-2026-01-12"],
-          fallbacks: "default",
-          // Resume conversas muito longas automaticamente.
-          context_management: { edits: [{ type: "compact_20260112" }] },
-        });
+    // Só grava o histórico quando a resposta termina bem; erros e recusas não deixam nada pela metade.
+    const concluir = async (texto) => {
+      await this.banco.salvarConversa(id, mensagens);
+      return { texto, acoes };
+    };
 
-        if (resposta.stop_reason === "refusal") {
-          mensagens.length = inicio; // descarta a pergunta recusada
-          return { texto: "Desculpe, não posso ajudar com isso.", acoes };
-        }
+    for (let volta = 0; volta < MAX_VOLTAS; volta++) {
+      const resposta = await this.cliente.beta.messages.create({
+        model: MODELO,
+        max_tokens: 16000,
+        system: this.sistema,
+        tools: this.tools,
+        messages: mensagens,
+        output_config: { effort: ESFORCO },
+        cache_control: { type: "ephemeral" },
+        // Se o modelo recusar por engano, o próprio servidor tenta outro modelo.
+        betas: ["server-side-fallback-2026-07-01", "compact-2026-01-12"],
+        fallbacks: "default",
+        // Resume conversas muito longas automaticamente.
+        context_management: { edits: [{ type: "compact_20260112" }] },
+      });
 
-        // Guarda a resposta completa, sem alterar nada (exigido pela API).
-        mensagens.push({ role: "assistant", content: resposta.content });
-
-        if (resposta.stop_reason === "pause_turn") continue; // busca longa: continua
-
-        const chamadas = resposta.content.filter((b) => b.type === "tool_use");
-        if (resposta.stop_reason !== "tool_use" || chamadas.length === 0) {
-          const texto = resposta.content
-            .filter((b) => b.type === "text")
-            .map((b) => b.text)
-            .join("")
-            .trim();
-          return { texto: texto || "Pronto.", acoes };
-        }
-
-        const resultados = [];
-        for (const chamada of chamadas) {
-          acoes.push(chamada.name);
-          try {
-            const r = await this.ferramentas.executar(chamada.name, chamada.input);
-            resultados.push({ type: "tool_result", tool_use_id: chamada.id, content: JSON.stringify(r) });
-          } catch (erro) {
-            resultados.push({ type: "tool_result", tool_use_id: chamada.id, is_error: true, content: String(erro.message || erro) });
-          }
-        }
-        mensagens.push({ role: "user", content: resultados });
+      if (resposta.stop_reason === "refusal") {
+        return { texto: "Desculpe, não posso ajudar com isso.", acoes }; // não grava a pergunta recusada
       }
-      return { texto: "Essa tarefa ficou longa demais. Pode reformular de um jeito mais simples?", acoes };
-    } catch (erro) {
-      mensagens.length = inicio; // não deixa o histórico pela metade
-      throw erro;
+
+      // Guarda a resposta completa, sem alterar nada (exigido pela API).
+      mensagens.push({ role: "assistant", content: resposta.content });
+
+      if (resposta.stop_reason === "pause_turn") continue; // busca longa: continua
+
+      const chamadas = resposta.content.filter((b) => b.type === "tool_use");
+      if (resposta.stop_reason !== "tool_use" || chamadas.length === 0) {
+        const texto = resposta.content
+          .filter((b) => b.type === "text")
+          .map((b) => b.text)
+          .join("")
+          .trim();
+        return concluir(texto || "Pronto.");
+      }
+
+      const resultados = [];
+      for (const chamada of chamadas) {
+        acoes.push(chamada.name);
+        try {
+          const r = await this.ferramentas.executar(chamada.name, chamada.input);
+          resultados.push({ type: "tool_result", tool_use_id: chamada.id, content: JSON.stringify(r) });
+        } catch (erro) {
+          resultados.push({ type: "tool_result", tool_use_id: chamada.id, is_error: true, content: String(erro.message || erro) });
+        }
+      }
+      mensagens.push({ role: "user", content: resultados });
     }
+    return { texto: "Essa tarefa ficou longa demais. Pode reformular de um jeito mais simples?", acoes };
   }
 }
 

@@ -35,14 +35,26 @@ Depois abra **http://localhost:3000** no **Chrome** ou no **Edge** e permita o u
 | `JARVIS_SENHA` | Pede uma senha para usar o Jarvis. **Use sempre que ele ficar na internet**, senão qualquer pessoa gasta seus créditos. |
 | `JARVIS_NOME_USUARIO` | Seu nome, para o Jarvis te chamar por ele. |
 | `JARVIS_ESFORCO` | `low` (padrão, mais rápido e barato) até `high` (pensa mais). |
-| `TZ` | Fuso horário dos lembretes. O padrão é `America/Sao_Paulo`. |
+| `JARVIS_FUSO` | Fuso horário dos lembretes. O padrão é `America/Sao_Paulo`. |
 | `PORT` | Porta do servidor. O padrão é `3000`. |
 
-## Usar no celular
+## Publicar no Netlify (usar no celular de qualquer lugar)
 
-- **Na mesma rede Wi-Fi:** o reconhecimento de voz exige HTTPS, então o mais fácil é publicar o Jarvis na internet (veja abaixo).
-- **Publicado na internet:** você pode hospedar no Render, no Railway ou em uma VPS. Defina as variáveis do `.env` no painel do serviço e use `npm start` como comando de início. Nesses serviços o arquivo `dados/` pode ser apagado a cada deploy; para não perder os dados, use um disco persistente e aponte `JARVIS_DADOS` para ele.
-- No Chrome do Android, use *Adicionar à tela inicial* para ele abrir como um aplicativo.
+O projeto já vem pronto para o Netlify: a API roda como Netlify Function (`netlify/functions/api.mjs`) e os dados ficam no Netlify Blobs.
+
+1. No Netlify, abra o projeto e vá em **Project configuration → Build & deploy → Link repository**. Se ainda não tiver um projeto, use **Add new project → Import an existing project**.
+2. Escolha o GitHub e o repositório **Imprimir-Dinheiro-**.
+3. Configure:
+   - **Branch to deploy:** `main`
+   - **Base directory:** `jarvis`
+   - **Build command:** deixe vazio
+   - **Publish directory:** `public` (já definido no `netlify.toml`)
+4. Em **Project configuration → Environment variables**, crie a variável `ANTHROPIC_API_KEY` com a sua chave e marque-a como **secreta**.
+5. Faça um novo deploy em **Deploys → Trigger deploy**.
+
+Para limitar o acesso, o Netlify pode exigir login da sua equipe (*Visitor access → Team login*). Assim só você usa o Jarvis. Outra opção é definir `JARVIS_SENHA` nas variáveis de ambiente.
+
+No Chrome do Android, use *Adicionar à tela inicial* para ele abrir como um aplicativo.
 
 > O reconhecimento de voz funciona no Chrome, no Edge e no Chrome do Android. No iPhone (Safari) ele pode ser limitado. Nesse caso, digite; a resposta em voz funciona normalmente.
 
@@ -56,12 +68,15 @@ Se o modelo recusar um pedido por engano, o próprio servidor da Anthropic tenta
 
 ```
 jarvis/
-├── server.js            # servidor web e API
-├── src/cerebro.js       # conversa com o Claude e executa as ferramentas
-├── src/ferramentas.js   # notas, lembretes e finanças (definições das ferramentas)
-├── src/db.js            # armazenamento em dados/jarvis.json
-├── public/              # interface (HTML, CSS e JS com voz)
-└── test/                # testes: npm test
+├── server.js                  # servidor local (no seu computador)
+├── netlify/functions/api.mjs  # a mesma API, rodando no Netlify
+├── src/rotas.js               # rotas da API (usadas pelos dois)
+├── src/cerebro.js             # conversa com o Claude e executa as ferramentas
+├── src/ferramentas.js         # notas, lembretes e finanças (definições das ferramentas)
+├── src/db.js                  # regras dos dados
+├── src/armazem.js             # onde salva: arquivo local ou Netlify Blobs
+├── public/                    # interface (HTML, CSS e JS com voz)
+└── test/                      # testes: npm test
 ```
 
-As conversas ficam na memória do servidor e somem quando ele reinicia. Notas, lembretes e finanças ficam salvos em `dados/jarvis.json`.
+No computador, tudo fica salvo em `dados/jarvis.json`. No Netlify, fica no Netlify Blobs (menu **Data & Storage → Blobs**).
