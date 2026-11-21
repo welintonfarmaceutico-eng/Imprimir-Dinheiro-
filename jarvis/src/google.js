@@ -1,6 +1,7 @@
 // Google Agenda: conexão (OAuth) e acesso aos eventos da agenda principal.
 // Precisa de GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET (veja o README).
 import crypto from "node:crypto";
+import { fuso, lerData } from "./fuso.js";
 
 const AUTORIZAR = "https://accounts.google.com/o/oauth2/v2/auth";
 const TOKEN = "https://oauth2.googleapis.com/token";
@@ -9,7 +10,7 @@ const ESCOPO = "https://www.googleapis.com/auth/calendar.events";
 const VALIDADE_ESTADO_MS = 10 * 60 * 1000;
 
 export class GoogleAgenda {
-  constructor(armazem, { fetch: f = globalThis.fetch, env = process.env } = {}) {
+  constructor(armazem, { fetch: f = (...a) => globalThis.fetch(...a), env = process.env } = {}) {
     this.armazem = armazem;
     this.fetch = f;
     this.clientId = env.GOOGLE_CLIENT_ID || "";
@@ -121,18 +122,18 @@ export class GoogleAgenda {
 
   async criarEvento({ titulo, inicio, fim, local, descricao }) {
     for (const [nome, v] of [["inicio", inicio], ["fim", fim]]) {
-      if (Number.isNaN(new Date(v).getTime())) throw new Error(`Data inválida em ${nome}: ${v}`);
+      if (Number.isNaN(lerData(v).getTime())) throw new Error(`Data inválida em ${nome}: ${v}`);
     }
-    if (new Date(fim) <= new Date(inicio)) throw new Error("O fim do evento precisa ser depois do início.");
-    const fuso = process.env.TZ || "America/Sao_Paulo";
+    if (lerData(fim) <= lerData(inicio)) throw new Error("O fim do evento precisa ser depois do início.");
+    const tz = fuso();
     const e = await this.#api(EVENTOS, {
       method: "POST",
       body: JSON.stringify({
         summary: titulo,
         location: local || undefined,
         description: descricao || undefined,
-        start: { dateTime: new Date(inicio).toISOString(), timeZone: fuso },
-        end: { dateTime: new Date(fim).toISOString(), timeZone: fuso },
+        start: { dateTime: lerData(inicio).toISOString(), timeZone: tz },
+        end: { dateTime: lerData(fim).toISOString(), timeZone: tz },
       }),
     });
     return { id: e.id, titulo: e.summary, inicio: e.start?.dateTime, fim: e.end?.dateTime, link: e.htmlLink };

@@ -51,6 +51,18 @@ Depois abra **http://localhost:3000** no **Chrome** ou no **Edge** e permita o u
 | `WHATSAPP_TELEFONE` e `WHATSAPP_APIKEY` | Para receber os lembretes no WhatsApp (veja abaixo). |
 | `JARVIS_RESUMO_HORA` | Hora do resumo diário no WhatsApp (0 a 23). O padrão é `7`. Use `desligado` para não receber. |
 
+## Publicar no Cloudflare (grátis, recomendado)
+
+O Jarvis roda no **Cloudflare Workers**: as telas, a API e os lembretes a cada minuto. Os dados ficam no banco **D1** chamado `jarvis` (já indicado em `wrangler.jsonc`).
+
+1. No painel do Cloudflare: **Workers & Pages → Create → Import a repository**, escolha este repositório.
+2. Em **Root directory** (pasta raiz) coloque `jarvis`. O comando de publicação é `npx wrangler deploy` (o padrão).
+3. Depois da primeira publicação, em **Settings → Variables and Secrets**, adicione como **Secret**: `ANTHROPIC_API_KEY`, `JARVIS_SENHA` (obrigatória: sem o login do Netlify, a senha é a única proteção), `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `WHATSAPP_TELEFONE`, `WHATSAPP_APIKEY`; e, se quiser, `JARVIS_NOME_USUARIO`.
+4. No Google Cloud, no cliente OAuth, adicione o novo endereço de retorno: `https://SEU-ENDERECO.workers.dev/api/google/retorno`.
+5. Abra o novo endereço, reconecte o Google Agenda e baixe de novo o Jarvis PC (a chave do PC é nova).
+
+Cada `merge` na `main` publica sozinho. As publicações do Cloudflare são grátis.
+
 ## Publicar no Netlify (usar no celular de qualquer lugar)
 
 O projeto já vem pronto para o Netlify: a API roda como Netlify Function (`netlify/functions/api.mjs`) e os dados ficam no Netlify Blobs.

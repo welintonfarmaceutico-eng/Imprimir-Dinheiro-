@@ -3,6 +3,7 @@
 import crypto from "node:crypto";
 import Anthropic from "@anthropic-ai/sdk";
 import { Banco } from "./db.js";
+import { inicioDoDia } from "./fuso.js";
 import { criarFerramentas } from "./ferramentas.js";
 import { Cerebro } from "./cerebro.js";
 import { GoogleAgenda } from "./google.js";
@@ -213,9 +214,8 @@ export function criarJarvis(armazem, { senha = process.env.JARVIS_SENHA || "", c
         return json({ ok: true });
       case "GET /api/agenda/hoje": {
         if (!agenda.configurado || !(await agenda.conectado())) return json({ conectado: false, eventos: [] });
-        const inicio = new Date();
-        inicio.setHours(0, 0, 0, 0);
-        const fim = new Date(inicio.getTime() + 2 * 24 * 60 * 60 * 1000); // hoje e amanhã
+        const inicio = inicioDoDia();
+        const fim = inicioDoDia(new Date(), 2); // hoje e amanhã
         try {
           return json({ conectado: true, eventos: await agenda.listarEventos(inicio, fim) });
         } catch (erro) {

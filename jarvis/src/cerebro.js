@@ -1,4 +1,5 @@
 // O "cérebro" do Jarvis: conversa com o Claude e executa as ferramentas.
+import { formatar, fuso, isoLocal } from "./fuso.js";
 import Anthropic from "@anthropic-ai/sdk";
 
 const MODELO = process.env.JARVIS_MODELO || "claude-opus-5-5";
@@ -39,7 +40,7 @@ export class Cerebro {
     this.banco = banco; // guarda o histórico das conversas
     this.sistema = promptDeSistema(); // fixo: mantém o cache de prompt
     this.tools = [
-      { type: "web_search_20260209", name: "web_search", max_uses: 2, user_location: { type: "approximate", country: "BR", timezone: process.env.TZ } },
+      { type: "web_search_20260209", name: "web_search", max_uses: 2, user_location: { type: "approximate", country: "BR", timezone: fuso() } },
       ...ferramentas.definicoes,
     ];
   }
@@ -49,7 +50,7 @@ export class Cerebro {
   }
 
   agora() {
-    return new Date().toLocaleString("pt-BR", {
+    return formatar(new Date(), {
       weekday: "long",
       day: "2-digit",
       month: "long",
@@ -157,10 +158,3 @@ export function limparFallback(conteudo) {
   });
 }
 
-// Data/hora local em ISO 8601 com o fuso, ex.: 2026-11-21T15:30:00-03:00
-function isoLocal(d) {
-  const p = (n) => String(Math.floor(Math.abs(n))).padStart(2, "0");
-  const off = -d.getTimezoneOffset();
-  const sinal = off >= 0 ? "+" : "-";
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}:00${sinal}${p(off / 60)}:${p(off % 60)}`;
-}

@@ -553,3 +553,17 @@ test("resumo diário: Google desconectado avisa; erro tenta só 3 vezes; hora co
   assert.equal(horaDoResumo({ JARVIS_RESUMO_HORA: "8" }), 8);
   assert.equal(horaDoResumo({ JARVIS_RESUMO_HORA: "desligado" }), null);
 });
+
+// ---------- Fuso horário (no Cloudflare o servidor fica em UTC) ----------
+import { hojeLocal, horaLocal, inicioDoDia, isoLocal, lerData } from "../src/fuso.js";
+
+test("fuso: datas no horário de Brasília mesmo com o servidor em outro fuso", () => {
+  const d = new Date("2026-11-22T01:30:00Z"); // 22:30 do dia 21 em Brasília
+  assert.equal(hojeLocal(d), "2026-11-21");
+  assert.equal(horaLocal(d), 22);
+  assert.equal(inicioDoDia(d).toISOString(), "2026-11-21T03:00:00.000Z");
+  assert.equal(inicioDoDia(d, 1).toISOString(), "2026-11-22T03:00:00.000Z");
+  assert.equal(isoLocal(d), "2026-11-21T22:30:00-03:00");
+  assert.equal(lerData("2026-11-21T17:00").toISOString(), "2026-11-21T20:00:00.000Z");
+  assert.equal(lerData("2026-11-21T17:00:00Z").toISOString(), "2026-11-21T17:00:00.000Z");
+});
