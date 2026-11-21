@@ -551,11 +551,12 @@ function mostrarStatusPc(texto, tipo = "") {
 }
 async function atualizarStatusPc() {
   try {
-    const { conectado } = await api("/api/pc/status");
+    const { conectado, online } = await api("/api/pc/status");
     $("desconectarPc").hidden = !conectado;
     $("testarPc").disabled = !conectado;
     mostrarStatusPc(conectado
-      ? "Programa baixado. Com o PC ligado, peça: \"abre o YouTube no PC\" ou \"aumenta o volume do computador\"."
+      ? (online ? "🟢 PC ligado e conectado agora. " : "⚪ PC desligado ou programa fechado agora. ") +
+        "Peça: \"abre o YouTube no PC\" ou \"aumenta o volume do computador\"."
       : "Baixe o programa e abra no seu computador com Windows. Ele deixa o Jarvis abrir programas, sites e mexer no volume.");
   } catch (erro) {
     mostrarStatusPc(erro.message, "ruim");

@@ -176,6 +176,26 @@ export function criarJarvis(armazem, { senha = process.env.JARVIS_SENHA || "", c
       }
     }
 
+    // O programa do PC não usa a senha do Jarvis: cada pedido vem assinado com a chave do PC.
+    if (rota === "GET /api/pc/esperar") {
+      try {
+        const ordem = await computador.esperarOrdem({ ts: url.searchParams.get("ts"), sig: url.searchParams.get("sig") });
+        return ordem ? json(ordem) : new Response(null, { status: 204 });
+      } catch (erro) {
+        if (erro.message === "nao_autorizado") return json({ erro: "Chave do PC inválida" }, 401);
+        throw erro;
+      }
+    }
+    if (rota === "POST /api/pc/resposta") {
+      try {
+        await computador.receberResposta(await req.json());
+        return json({ ok: true });
+      } catch (erro) {
+        if (erro.message === "nao_autorizado") return json({ erro: "Chave do PC inválida" }, 401);
+        return json({ erro: "Resposta inválida" }, 400);
+      }
+    }
+
     if (!autorizado(req)) return json({ erro: "Senha incorreta" }, 401);
 
     switch (rota) {
@@ -232,9 +252,9 @@ export function criarJarvis(armazem, { senha = process.env.JARVIS_SENHA || "", c
           return json({ erro: erro.message }, 400);
         }
       case "GET /api/pc/status":
-        return json({ conectado: await computador.configurado() });
+        return json({ conectado: await computador.configurado(), online: await computador.online() });
       case "GET /api/pc/instalador":
-        return new Response(await computador.instalador(), {
+        return new Response(await computador.instalador(url.origin), {
           headers: { "content-type": "application/octet-stream", "content-disposition": 'attachment; filename="jarvis-pc.ps1"', "cache-control": "no-store" },
         });
       case "POST /api/pc/testar":

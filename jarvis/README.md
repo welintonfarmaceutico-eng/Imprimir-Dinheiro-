@@ -126,14 +126,14 @@ Um programa pequeno em PowerShell, que já vem no Windows, recebe as ordens do J
 2. No computador, aperte **Windows + R**, digite `powershell` e aperte **Enter**.
 3. Na janela do PowerShell, rode o comando abaixo, trocando o caminho pelo do arquivo baixado. Também dá para digitar o começo do comando e arrastar o arquivo para dentro da janela:
    ```
-   powershell -ExecutionPolicy Bypass -File "C:\Users\SEU_USUARIO\Downloads\jarvis-pc.ps1"
+   powershell -NoProfile -ExecutionPolicy Bypass -File (Get-ChildItem "$env:USERPROFILE\Downloads\jarvis-pc*.ps1" | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName
    ```
 4. Aparece a mensagem "Jarvis PC instalado e conectado!". A partir daí, ele inicia sozinho junto com o Windows.
 
 O botão direito → "Executar com o PowerShell" pode não funcionar: em alguns PCs a janela fecha antes de instalar.
 
 Como funciona:
-- As ordens passam pelo **ntfy.sh**, um serviço gratuito de mensagens. O PC recebe na hora, sem consultar o Netlify o tempo todo.
+- O PC fala **direto com o Jarvis**: fica perguntando por ordens em `/api/pc/esperar` (cada pergunta aguarda até 25 segundos) e devolve o resultado em `/api/pc/resposta`. São umas 3.500 consultas por dia, bem dentro do plano grátis do Cloudflare.
 - Toda ordem e toda resposta são **assinadas com HMAC-SHA256**, usando a chave secreta. O programa ignora ordens falsas e ordens com mais de 5 minutos.
 - O programa só faz três coisas: **abrir programa** (atalhos do menu Iniciar e da Área de Trabalho, ou programas do Windows), **abrir site** (só endereços http ou https) e **volume**. Nunca roda comandos livres.
 - O programa fica instalado em `%APPDATA%\JarvisPC`, e o registro de atividades fica em `registro.txt`. O atalho para iniciar com o Windows fica na pasta Inicializar.
@@ -165,7 +165,7 @@ jarvis/
 ├── src/armazem.js             # onde salva: arquivo local ou Netlify Blobs
 ├── src/google.js              # conexão e acesso ao Google Agenda
 ├── src/whatsapp.js            # avisos no WhatsApp (CallMeBot)
-├── src/computador.js          # ponte com o Jarvis PC (ntfy.sh + assinatura HMAC)
+├── src/computador.js          # ponte com o Jarvis PC (fila no banco + assinatura HMAC)
 ├── src/jarvis-pc-modelo.js    # o programa do Windows (PowerShell), preenchido no download
 ├── netlify/functions/lembretes-whatsapp.mjs  # confere os lembretes a cada minuto
 ├── public/                    # interface (HTML, CSS e JS com voz)
