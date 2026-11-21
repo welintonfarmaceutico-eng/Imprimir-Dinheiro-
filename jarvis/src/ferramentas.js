@@ -8,7 +8,7 @@ const obj = (properties) => ({
   additionalProperties: false,
 });
 
-export function criarFerramentas(banco, agenda = null) {
+export function criarFerramentas(banco, agenda = null, whatsapp = null) {
   const ferramentas = [
     // ---------- Notas ----------
     {
@@ -158,6 +158,18 @@ export function criarFerramentas(banco, agenda = null) {
         executar: ({ id }) => agenda.apagarEvento(id),
       },
     );
+  }
+
+  // ---------- WhatsApp ----------
+  if (whatsapp?.configurado) {
+    ferramentas.push({
+      definicao: {
+        name: "enviar_whatsapp",
+        description: "Envia uma mensagem de texto para o WhatsApp do próprio usuário (ex.: lista de compras, resumo, anotação). Só use quando ele pedir para mandar algo no WhatsApp.",
+        input_schema: obj({ texto: { type: "string", description: "Texto da mensagem, sem markdown" } }),
+      },
+      executar: ({ texto }) => whatsapp.enviar(texto),
+    });
   }
 
   const porNome = new Map(ferramentas.map((f) => [f.definicao.name, f]));

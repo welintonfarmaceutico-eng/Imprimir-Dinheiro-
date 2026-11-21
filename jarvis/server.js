@@ -6,13 +6,17 @@ import path from "node:path";
 import { Readable } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { ArmazemArquivo } from "./src/armazem.js";
-import { criarJarvis } from "./src/rotas.js";
+import { criarJarvis, verificarLembretesWhatsApp } from "./src/rotas.js";
 
 const aqui = path.dirname(fileURLToPath(import.meta.url));
 const PUBLICO = path.join(aqui, "public");
 const PORTA = Number(process.env.PORT || 3000);
 
-const tratar = criarJarvis(new ArmazemArquivo(process.env.JARVIS_DADOS || path.join(aqui, "dados", "jarvis.json")));
+const armazem = new ArmazemArquivo(process.env.JARVIS_DADOS || path.join(aqui, "dados", "jarvis.json"));
+const tratar = criarJarvis(armazem);
+
+// Lembretes no WhatsApp: confere a cada minuto (no Netlify, quem faz isso é a função agendada).
+setInterval(() => verificarLembretesWhatsApp(armazem).catch((e) => console.error(e)), 60 * 1000);
 
 const TIPOS = {
   ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",

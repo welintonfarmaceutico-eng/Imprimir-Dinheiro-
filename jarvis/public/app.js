@@ -298,6 +298,21 @@ botaoGoogle.addEventListener("click", async () => {
   }
 });
 
+// ---------- WhatsApp ----------
+const botaoWhatsapp = $("botaoWhatsapp");
+api("/api/whatsapp/status").then((s) => (botaoWhatsapp.hidden = !s.configurado)).catch(() => {});
+botaoWhatsapp.addEventListener("click", async () => {
+  botaoWhatsapp.disabled = true;
+  try {
+    await api("/api/whatsapp/teste", { method: "POST", body: "{}" });
+    adicionarMensagem("Mandei uma mensagem de teste para o seu WhatsApp.", "jarvis");
+  } catch (erro) {
+    adicionarMensagem(erro.message, "jarvis erro");
+  } finally {
+    botaoWhatsapp.disabled = false;
+  }
+});
+
 // ---------- Lembretes na hora certa ----------
 async function verificarLembretes() {
   try {
