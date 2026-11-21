@@ -44,12 +44,13 @@ export function explicarErro(erro) {
   return { mensagem: "Tive um problema para pensar agora. Tente de novo em instantes." };
 }
 
-export function criarJarvis(armazem, { senha = process.env.JARVIS_SENHA || "" } = {}) {
+export function criarJarvis(armazem, { senha = process.env.JARVIS_SENHA || "", cliente = null } = {}) {
   definirFuso();
   const banco = new Banco(armazem);
   const agenda = new GoogleAgenda(armazem);
   const whatsapp = new WhatsApp();
   const cerebro = new Cerebro(criarFerramentas(banco, agenda, whatsapp), banco);
+  if (cliente) cerebro.cliente = cliente; // só nos testes
 
   function autorizado(req) {
     if (!senha) return true;
@@ -78,6 +79,56 @@ export function criarJarvis(armazem, { senha = process.env.JARVIS_SENHA || "" } 
       const { mensagem, credito } = explicarErro(erro);
       if (credito) await avisarCreditoNoWhatsApp(mensagem);
       return json({ erro: mensagem }, 500);
+    }
+  }
+
+  // Mesma conversa, mas a resposta vai chegando em tempo real (Server-Sent Events).
+  async function conversarAoVivo(req) {
+    const { conversa, texto } = await corpo(req);
+    if (typeof conversa !== "string" || !ID_VALIDO.test(conversa) || typeof texto !== "string" || !texto.trim()) {
+      return json({ erro: "Envie 'conversa' e 'texto'." }, 400);
+    }
+    const codificador = new TextEncoder();
+    const fluxo = new ReadableStream({
+      async start(controle) {
+        const enviar = (evento) => controle.enqueue(codificador.encode(`data: ${JSON.stringify(evento)}\n\n`));
+        try {
+          const r = await cerebro.conversar(conversa, texto.trim().slice(0, 4000), (delta) => enviar({ tipo: "texto", delta }));
+          enviar({ tipo: "fim", ...r });
+        } catch (erro) {
+          console.error(erro);
+          const { mensagem, credito } = explicarErro(erro);
+          if (credito) await avisarCreditoNoWhatsApp(mensagem);
+          enviar({ tipo: "erro", mensagem });
+        }
+        controle.close();
+      },
+    });
+    return new Response(fluxo, { headers: { "content-type": "text/event-stream; charset=utf-8", "cache-control": "no-cache" } });
+  }
+
+  // Botões rápidos da tela: salvam direto, sem passar pela IA (custo zero).
+  async function adicionarRapido(rota, dados) {
+    try {
+      if (rota === "POST /api/notas") {
+        if (typeof dados.texto !== "string" || !dados.texto.trim()) throw new Error("Escreva a nota.");
+        return json(await banco.adicionarNota(dados.texto.trim().slice(0, 2000)));
+      }
+      if (rota === "POST /api/transacoes") {
+        const valor = Number(String(dados.valor ?? "").replace(",", "."));
+        return json(await banco.adicionarTransacao({
+          tipo: dados.tipo,
+          valor,
+          categoria: String(dados.categoria || "outros").slice(0, 40),
+          descricao: String(dados.descricao || "").slice(0, 200),
+        }));
+      }
+      if (rota === "POST /api/lembretes") {
+        if (typeof dados.texto !== "string" || !dados.texto.trim()) throw new Error("Escreva o lembrete.");
+        return json(await banco.adicionarLembrete(dados.texto.trim().slice(0, 500), dados.quando));
+      }
+    } catch (erro) {
+      return json({ erro: erro.message }, 400);
     }
   }
 
@@ -126,6 +177,12 @@ export function criarJarvis(armazem, { senha = process.env.JARVIS_SENHA || "" } 
     switch (rota) {
       case "POST /api/conversar":
         return conversar(req);
+      case "POST /api/conversar/ao-vivo":
+        return conversarAoVivo(req);
+      case "POST /api/notas":
+      case "POST /api/transacoes":
+      case "POST /api/lembretes":
+        return adicionarRapido(rota, await corpo(req));
       case "POST /api/conversa/limpar": {
         const { conversa } = await corpo(req);
         if (typeof conversa === "string" && ID_VALIDO.test(conversa)) await cerebro.limpar(conversa);

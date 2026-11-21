@@ -27,7 +27,21 @@ function blobsFalso() {
 // Cliente da API simulado: devolve as respostas na ordem e guarda os pedidos.
 function clienteFalso(respostas) {
   const pedidos = [];
-  return { pedidos, beta: { messages: { create: async (p) => { pedidos.push(structuredClone(p)); return respostas.shift(); } } } };
+  // Imita client.beta.messages.stream(): manda os textos para quem escuta "text" e devolve a mensagem final.
+  const stream = (p) => {
+    pedidos.push(structuredClone(p));
+    const resposta = respostas.shift();
+    const ouvintes = [];
+    return {
+      on(evento, cb) { if (evento === "text") ouvintes.push(cb); return this; },
+      async finalMessage() {
+        if (resposta instanceof Error) throw resposta;
+        for (const b of resposta.content) if (b.type === "text") ouvintes.forEach((cb) => cb(b.text));
+        return resposta;
+      },
+    };
+  };
+  return { pedidos, beta: { messages: { stream } } };
 }
 
 for (const [nome, criar] of [
@@ -123,7 +137,7 @@ test("cérebro: recusa e erro não gravam histórico", async () => {
   assert.match(r.texto, /não posso/);
   assert.equal((await banco.obterConversa("c2")).length, 0);
 
-  cerebro.cliente = { beta: { messages: { create: async () => { throw new Error("rede"); } } } };
+  cerebro.cliente = clienteFalso([new Error("rede")]);
   await assert.rejects(cerebro.conversar("c2", "oi"));
   assert.equal((await banco.obterConversa("c2")).length, 0);
 });
@@ -305,4 +319,77 @@ test("erros: crédito acabado e limite de gasto viram mensagens claras", () => {
 
   assert.match(explicarErro(gerar(529, { type: "overloaded_error", message: "m" })).mensagem, /ocupado/);
   assert.match(explicarErro(gerar(400, { type: "invalid_request_error", message: "outra coisa" })).mensagem, /problema para pensar/);
+});
+
+// ---------- Tempo real, fallback e botões rápidos ----------
+import { limparFallback } from "../src/cerebro.js";
+
+test("cérebro: texto chega em pedaços enquanto a resposta é gerada", async () => {
+  const banco = novoBanco();
+  const cerebro = new Cerebro(criarFerramentas(banco), banco);
+  cerebro.cliente = clienteFalso([{ stop_reason: "end_turn", content: [{ type: "text", text: "Olá! " }, { type: "text", text: "Tudo certo." }] }]);
+  const pedacos = [];
+  const r = await cerebro.conversar("c3", "oi", (d) => pedacos.push(d));
+  assert.deepEqual(pedacos, ["Olá! ", "Tudo certo."]);
+  assert.equal(r.texto, "Olá! Tudo certo.");
+  assert.equal(cerebro.cliente.pedidos[0].tools[0].max_uses, 2);
+});
+
+test("fallback: tira raciocínio e chamadas antes da troca de modelo, mantém o resto", () => {
+  const conteudo = [
+    { type: "thinking", thinking: "", signature: "a" },
+    { type: "text", text: "Vou " },
+    { type: "tool_use", id: "t0", name: "x", input: {} },
+    { type: "server_tool_use", id: "s1", name: "web_search", input: {} },
+    { type: "web_search_tool_result", tool_use_id: "s1", content: [] },
+    { type: "server_tool_use", id: "s2", name: "web_search", input: {} },
+    { type: "fallback", from: { model: "a" }, to: { model: "b" } },
+    { type: "thinking", thinking: "", signature: "b" },
+    { type: "tool_use", id: "t1", name: "y", input: {} },
+  ];
+  const limpo = limparFallback(conteudo).map((b) => b.type + (b.id ? ":" + b.id : ""));
+  assert.deepEqual(limpo, ["text", "server_tool_use:s1", "web_search_tool_result", "fallback", "thinking", "tool_use:t1"]);
+  const semFallback = [{ type: "thinking" }, { type: "text" }];
+  assert.equal(limparFallback(semFallback), semFallback);
+});
+
+test("rotas: botões rápidos salvam sem IA e validam os dados", async () => {
+  const tratar = criarJarvis(new ArmazemBlobs(blobsFalso()), { senha: "" });
+  const post = (caminho, corpo) => tratar(new Request(`http://x${caminho}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(corpo) }));
+  assert.equal((await post("/api/transacoes", { tipo: "saida", valor: "35,50", categoria: "alimentação", descricao: "almoço" })).status, 200);
+  assert.equal((await post("/api/transacoes", { tipo: "saida", valor: "abc" })).status, 400);
+  assert.equal((await post("/api/notas", { texto: "comprar pão" })).status, 200);
+  assert.equal((await post("/api/notas", { texto: " " })).status, 400);
+  assert.equal((await post("/api/lembretes", { texto: "x", quando: "2099-01-01T10:00:00-03:00" })).status, 200);
+  assert.equal((await post("/api/lembretes", { texto: "x", quando: "amanhã" })).status, 400);
+  const painel = await (await tratar(new Request("http://x/api/painel"))).json();
+  assert.equal(painel.financas.saidas, 35.5);
+  assert.equal(painel.notas.length, 1);
+  assert.equal(painel.lembretes.length, 1);
+});
+
+test("rotas: resposta ao vivo chega em eventos e termina com o texto completo", async () => {
+  const cliente = clienteFalso([{ stop_reason: "end_turn", content: [{ type: "text", text: "Bom " }, { type: "text", text: "dia!" }] }]);
+  const tratar = criarJarvis(new ArmazemBlobs(blobsFalso()), { senha: "", cliente });
+  const resp = await tratar(new Request("http://x/api/conversar/ao-vivo", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ conversa: "c9", texto: "oi" }),
+  }));
+  assert.match(resp.headers.get("content-type"), /text\/event-stream/);
+  const eventos = (await resp.text()).split("\n\n").filter(Boolean).map((l) => JSON.parse(l.replace(/^data: /, "")));
+  assert.deepEqual(eventos.map((e) => e.tipo), ["texto", "texto", "fim"]);
+  assert.equal(eventos.at(-1).texto, "Bom dia!");
+});
+
+test("cérebro: texto antes e depois de uma ferramenta vem separado por quebra de linha", async () => {
+  const banco = novoBanco();
+  const cerebro = new Cerebro(criarFerramentas(banco), banco);
+  cerebro.cliente = clienteFalso([
+    { stop_reason: "tool_use", content: [{ type: "text", text: "Vou anotar." }, { type: "tool_use", id: "t1", name: "salvar_nota", input: { texto: "pão" } }] },
+    { stop_reason: "end_turn", content: [{ type: "text", text: "Pronto, anotado." }] },
+  ]);
+  const pedacos = [];
+  const r = await cerebro.conversar("c4", "anota pão", (d) => pedacos.push(d));
+  assert.equal(pedacos.join(""), "Vou anotar.\nPronto, anotado.");
+  assert.equal(r.texto, "Pronto, anotado.");
+  assert.equal((await banco.listarNotas())[0].texto, "pão");
 });
