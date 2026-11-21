@@ -63,3 +63,43 @@ export class ArmazemBlobs {
     return true;
   }
 }
+
+// Cloudflare D1 (banco SQL grátis do Cloudflare). Uma tabela só, no mesmo formato chave/valor.
+export class ArmazemD1 {
+  constructor(db) {
+    this.db = db;
+    this.pronto = null;
+  }
+  #preparar() {
+    this.pronto ||= this.db
+      .prepare("CREATE TABLE IF NOT EXISTS itens (colecao TEXT NOT NULL, id TEXT NOT NULL, valor TEXT NOT NULL, PRIMARY KEY (colecao, id))")
+      .run()
+      .catch((erro) => {
+        this.pronto = null; // tenta de novo no próximo uso
+        throw erro;
+      });
+    return this.pronto;
+  }
+  async listar(colecao) {
+    await this.#preparar();
+    const { results } = await this.db.prepare("SELECT valor FROM itens WHERE colecao = ?").bind(colecao).all();
+    return results.map((r) => JSON.parse(r.valor));
+  }
+  async obter(colecao, id) {
+    await this.#preparar();
+    const r = await this.db.prepare("SELECT valor FROM itens WHERE colecao = ? AND id = ?").bind(colecao, String(id)).first();
+    return r ? JSON.parse(r.valor) : null;
+  }
+  async salvar(colecao, id, valor) {
+    await this.#preparar();
+    await this.db
+      .prepare("INSERT INTO itens (colecao, id, valor) VALUES (?, ?, ?) ON CONFLICT (colecao, id) DO UPDATE SET valor = excluded.valor")
+      .bind(colecao, String(id), JSON.stringify(valor))
+      .run();
+  }
+  async apagar(colecao, id) {
+    await this.#preparar();
+    const r = await this.db.prepare("DELETE FROM itens WHERE colecao = ? AND id = ?").bind(colecao, String(id)).run();
+    return r.meta.changes > 0;
+  }
+}

@@ -16,5 +16,8 @@
   "type": "module",
   "engines": {
     "node": ">=22.9"
+  },
+  "devDependencies": {
+    "wrangler": "^4.166.0"
   }
 }

@@ -1,7 +1,7 @@
 // Resumo diário no WhatsApp: agenda do dia, lembretes de hoje e finanças do mês.
 // Montado sem a IA (não gasta crédito da Anthropic). Sai uma vez por dia, na hora de
 // JARVIS_RESUMO_HORA (padrão 7). Para desligar: JARVIS_RESUMO_HORA=desligado.
-import { hojeLocal } from "./db.js";
+import { formatar, hojeLocal, horaLocal, inicioDoDia } from "./fuso.js";
 
 const JANELA_HORAS = 4; // se o horário passar (servidor parado), ainda manda até 4h depois
 const MAX_TENTATIVAS = 3; // se o WhatsApp recusar, tenta de novo nos minutos seguintes, até 3 vezes
@@ -14,12 +14,12 @@ export function horaDoResumo(env = process.env) {
 }
 
 const real = (v) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-const horaMin = (d) => new Date(d).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+const horaMin = (d) => formatar(d, { hour: "2-digit", minute: "2-digit" });
 
-// Monta o texto do resumo (usa o fuso do processo, definido por definirFuso).
+// Monta o texto do resumo, no fuso do usuário.
 export async function montarResumo(banco, agenda, agora = new Date()) {
   const nome = process.env.JARVIS_NOME_USUARIO;
-  const dia = agora.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "2-digit" });
+  const dia = formatar(agora, { weekday: "long", day: "2-digit", month: "2-digit" });
   const partes = [`☀️ Bom dia${nome ? `, ${nome}` : ""}! Resumo de ${dia}:`];
 
   // Agenda do Google
@@ -28,11 +28,7 @@ export async function montarResumo(banco, agenda, agora = new Date()) {
       partes.push("📅 Agenda: o Google Agenda está desconectado. Abra o Jarvis e toque em \"Conectar Google Agenda\".");
     } else {
       try {
-        const inicio = new Date(agora);
-        inicio.setHours(0, 0, 0, 0);
-        const fim = new Date(inicio);
-        fim.setDate(fim.getDate() + 1);
-        const eventos = await agenda.listarEventos(inicio, fim);
+        const eventos = await agenda.listarEventos(inicioDoDia(agora), inicioDoDia(agora, 1));
         partes.push(
           eventos.length
             ? `📅 Agenda:\n${eventos.map((e) => `• ${e.diaInteiro ? "Dia todo" : horaMin(e.inicio)} – ${e.titulo}`).join("\n")}`
@@ -72,7 +68,7 @@ export async function montarResumo(banco, agenda, agora = new Date()) {
 // Chamada a cada minuto: manda o resumo quando chega a hora, uma vez só por dia.
 export async function enviarResumoDiario(banco, armazem, whatsapp, agenda, agora = new Date(), hora = horaDoResumo()) {
   if (!whatsapp.configurado || hora === null) return { enviado: false };
-  const h = agora.getHours();
+  const h = horaLocal(agora);
   if (h < hora || h >= hora + JANELA_HORAS) return { enviado: false };
 
   const hoje = hojeLocal(agora);

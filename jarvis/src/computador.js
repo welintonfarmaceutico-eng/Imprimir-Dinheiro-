@@ -8,7 +8,7 @@ const ACOES = ["abrir_programa", "abrir_site", "volume", "ping"];
 const ESPERA_MS = 9000; // quanto tempo espera o PC responder
 
 export class Computador {
-  constructor(armazem, { fetch: f = globalThis.fetch, servidor = process.env.JARVIS_PC_SERVIDOR || "https://ntfy.sh", esperaMs = ESPERA_MS } = {}) {
+  constructor(armazem, { fetch: f = (...a) => globalThis.fetch(...a), servidor = process.env.JARVIS_PC_SERVIDOR || "https://ntfy.sh", esperaMs = ESPERA_MS } = {}) {
     this.armazem = armazem;
     this.fetch = f;
     this.servidor = servidor.replace(/\/+$/, "");

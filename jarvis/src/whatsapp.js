@@ -5,7 +5,7 @@ const API = "https://api.callmebot.com/whatsapp.php";
 const JANELA_MS = 30 * 60 * 1000; // lembretes vencidos há mais de 30 min não são mais enviados
 
 export class WhatsApp {
-  constructor({ fetch: f = globalThis.fetch, env = process.env } = {}) {
+  constructor({ fetch: f = (...a) => globalThis.fetch(...a), env = process.env } = {}) {
     this.fetch = f;
     this.telefone = (env.WHATSAPP_TELEFONE || "").replace(/[^\d+]/g, "");
     this.apikey = (env.WHATSAPP_APIKEY || "").trim();

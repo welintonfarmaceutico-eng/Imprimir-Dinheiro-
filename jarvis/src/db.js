@@ -1,11 +1,9 @@
 // Regras de notas, lembretes e finanças, sobre qualquer armazém (arquivo ou Netlify Blobs).
 import crypto from "node:crypto";
 
-// Data local (respeita a variável TZ) no formato AAAA-MM-DD.
-export function hojeLocal(d = new Date()) {
-  const p = (n) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-}
+import { hojeLocal, lerData } from "./fuso.js";
+
+export { hojeLocal }; // data local (no fuso do usuário) no formato AAAA-MM-DD
 
 const arred = (v) => Math.round(v * 100) / 100;
 
@@ -36,7 +34,7 @@ export class Banco {
 
   // ---------- Lembretes ----------
   async adicionarLembrete(texto, quando) {
-    const data = new Date(quando);
+    const data = lerData(quando);
     if (Number.isNaN(data.getTime())) throw new Error(`Data inválida: ${quando}`);
     const lembrete = { id: this.novoId(), texto, quando: data.toISOString(), concluido: false, avisado: false };
     await this.armazem.salvar("lembretes", lembrete.id, lembrete);

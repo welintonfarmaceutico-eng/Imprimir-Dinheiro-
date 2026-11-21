@@ -1,0 +1,14 @@
+// Jarvis no Cloudflare Workers (veja "Publicar no Cloudflare" no README).
+// As chaves (ANTHROPIC_API_KEY, JARVIS_SENHA, GOOGLE_*, WHATSAPP_*) ficam no painel do
+// Cloudflare, em Settings > Variables and Secrets. "keep_vars" impede que a publicação as apague.
+{
+  "name": "jarvis",
+  "main": "cloudflare/worker.js",
+  "compatibility_date": "2026-11-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "keep_vars": true,
+  "assets": { "directory": "public", "binding": "ASSETS", "run_worker_first": ["/api/*"] },
+  "d1_databases": [{ "binding": "DB", "database_name": "jarvis", "database_id": "171f6892-9068-4194-880d-ddbda69fc79a" }],
+  "triggers": { "crons": ["* * * * *"] },
+  "observability": { "enabled": true }
+}
