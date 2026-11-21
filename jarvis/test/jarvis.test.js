@@ -393,3 +393,99 @@ test("cérebro: texto antes e depois de uma ferramenta vem separado por quebra d
   assert.equal(r.texto, "Pronto, anotado.");
   assert.equal((await banco.listarNotas())[0].texto, "pão");
 });
+
+// ---------- Computador (Jarvis PC), com ntfy e PC simulados ----------
+import { Computador } from "../src/computador.js";
+import cryptoNode from "node:crypto";
+
+// ntfy em memória + um "PC" que segue as mesmas regras do script do Windows.
+function ntfyComPc({ pcLigado = true, falsificar = false, falhar = null } = {}) {
+  const topicos = new Map();
+  let chavePc = null;
+  const hmac = (k, t) => cryptoNode.createHmac("sha256", k).update(t, "utf8").digest("hex");
+  const publicar = (topico, mensagem) => {
+    if (!topicos.has(topico)) topicos.set(topico, []);
+    topicos.get(topico).push({ id: String(Math.random()), time: Math.floor(Date.now() / 1000), event: "message", topic: topico, message: mensagem });
+  };
+  const executados = [];
+  const f = async (url, opcoes = {}) => {
+    const u = new URL(url);
+    const topico = u.pathname.split("/")[1];
+    if (opcoes.method === "POST") {
+      publicar(topico, opcoes.body);
+      // O "PC" recebe a ordem, confere a assinatura e responde assinado.
+      const c = JSON.parse(opcoes.body);
+      if (pcLigado && chavePc && hmac(chavePc, `${c.id}|${c.acao}|${c.alvo}|${c.ts}`) === c.sig) {
+        executados.push([c.acao, c.alvo]);
+        const ok = !falhar;
+        const mensagem = falhar || `feito: ${c.acao} ${c.alvo}`;
+        const { respostas } = Computador.topicos(chavePc);
+        const sig = falsificar ? "0".repeat(64) : hmac(chavePc, `${c.id}|${ok}|${mensagem}`);
+        setTimeout(() => publicar(respostas, JSON.stringify({ id: c.id, ok, mensagem, sig })), 50);
+      }
+      return new Response("{}", { status: 200 });
+    }
+    const since = Number(u.searchParams.get("since") || 0);
+    const linhas = (topicos.get(topico) || []).filter((m) => m.time >= since).map((m) => JSON.stringify(m)).join("\n");
+    return new Response(linhas, { status: 200 });
+  };
+  return { f, executados, instalarChave: (k) => (chavePc = k) };
+}
+
+test("pc: instalador cria a chave e preenche o script do Windows", async () => {
+  const armazem = new ArmazemBlobs(blobsFalso());
+  const pc = new Computador(armazem, { fetch: async () => new Response(""), servidor: "https://ntfy.sh" });
+  assert.equal(await pc.configurado(), false);
+  await assert.rejects(pc.executar("volume", "subir"), /ainda não foi conectado/);
+  const script = await pc.instalador();
+  const chave = await pc.chave();
+  const { comandos, respostas } = Computador.topicos(chave);
+  assert.ok(script.startsWith("﻿"), "precisa do BOM para o PowerShell 5 ler acentos");
+  assert.ok(script.includes(`$Chave = '${chave}'`));
+  assert.ok(script.includes(comandos) && script.includes(respostas));
+  assert.ok(!/__[A-Z_]+__/.test(script), "não pode sobrar marcador");
+  assert.ok(script.includes("\r\n"));
+  assert.match(comandos, /^[A-Za-z0-9_-]{1,64}$/);
+  assert.equal(await pc.chave(), chave, "baixar de novo mantém a mesma chave");
+  await pc.instalador();
+  assert.equal(await pc.chave(), chave);
+});
+
+test("pc: ordem assinada chega ao PC e a resposta assinada volta", async () => {
+  const armazem = new ArmazemBlobs(blobsFalso());
+  const sim = ntfyComPc();
+  const pc = new Computador(armazem, { fetch: sim.f, servidor: "https://ntfy.teste", esperaMs: 3000 });
+  await pc.instalador();
+  sim.instalarChave(await pc.chave());
+  assert.deepEqual(await pc.executar("abrir_site", "https://www.youtube.com"), { feito: true, mensagem: "feito: abrir_site https://www.youtube.com" });
+  assert.deepEqual(sim.executados, [["abrir_site", "https://www.youtube.com"]]);
+  await assert.rejects(pc.executar("rodar_comando", "format c:"), /não permitida/);
+});
+
+test("pc: resposta falsa é ignorada; PC desligado ou com erro vira mensagem clara", async () => {
+  for (const [opcoes, esperado] of [
+    [{ falsificar: true }, /não respondeu/],
+    [{ pcLigado: false }, /não respondeu/],
+    [{ falhar: 'Não achei o programa "xyz" neste computador.' }, /Não achei o programa/],
+  ]) {
+    const armazem = new ArmazemBlobs(blobsFalso());
+    const sim = ntfyComPc(opcoes);
+    const pc = new Computador(armazem, { fetch: sim.f, servidor: "https://ntfy.teste", esperaMs: 1500 });
+    await pc.instalador();
+    sim.instalarChave(await pc.chave());
+    await assert.rejects(pc.executar("abrir_programa", "xyz"), esperado);
+  }
+});
+
+test("pc: ferramenta e rotas do computador", async () => {
+  const nomes = criarFerramentas(novoBanco(), null, null, { executar() {} }).definicoes.map((d) => d.name);
+  assert.ok(nomes.includes("computador"));
+  const tratar = criarJarvis(new ArmazemBlobs(blobsFalso()), { senha: "" });
+  const req = (m, c) => tratar(new Request(`http://x${c}`, { method: m }));
+  assert.deepEqual(await (await req("GET", "/api/pc/status")).json(), { conectado: false });
+  const baixado = await req("GET", "/api/pc/instalador");
+  assert.match(baixado.headers.get("content-disposition"), /jarvis-pc\.ps1/);
+  assert.deepEqual(await (await req("GET", "/api/pc/status")).json(), { conectado: true });
+  assert.deepEqual(await (await req("POST", "/api/pc/desconectar")).json(), { ok: true });
+  assert.deepEqual(await (await req("GET", "/api/pc/status")).json(), { conectado: false });
+});

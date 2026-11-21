@@ -262,6 +262,9 @@ dialog h3 { font-family: "Orbitron", sans-serif; font-size: 15px; letter-spacing
 }
 .tema i { width: 26px; height: 26px; border-radius: 50%; display: block; box-shadow: 0 0 10px currentColor; }
 .tema[aria-pressed="true"] { border-color: var(--acento); background: rgba(var(--acento-rgb), .15); }
+.nota-pc { margin: -4px 0 0; color: var(--apagado); font-size: 15px; line-height: 1.35; }
+.nota-pc.ok { color: var(--verde); }
+.nota-pc.ruim { color: var(--vermelho); }
 .erro-form { color: var(--vermelho); min-height: 1.2em; margin: 8px 0 0; }
 
 /* ---------- Celular ---------- */
