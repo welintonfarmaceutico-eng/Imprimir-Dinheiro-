@@ -78,13 +78,20 @@ export class Cerebro {
         tools: this.tools,
         messages: mensagens,
         output_config: { effort: ESFORCO },
+        // Quando o Jarvis é atualizado (instruções ou ferramentas novas), o raciocínio salvo nas
+        // conversas antigas deixa de valer. "drop_block" descarta esse raciocínio antigo em vez de dar erro.
+        thinking: { type: "adaptive", block_binding: { prefix_mismatch_behavior: "drop_block" } },
         cache_control: { type: "ephemeral" },
         // Se o modelo recusar por engano, o próprio servidor tenta outro modelo.
-        betas: ["server-side-fallback-2026-07-01", "compact-2026-01-12"],
+        betas: ["server-side-fallback-2026-07-01", "compact-2026-01-12", "thinking-binding-controls-2026-08-01"],
         fallbacks: "default",
         // Resume conversas muito longas automaticamente.
         context_management: { edits: [{ type: "compact_20260112" }] },
       });
+
+      if (resposta.input_transformations?.length) {
+        console.warn("Raciocínio antigo descartado:", JSON.stringify(resposta.input_transformations));
+      }
 
       if (resposta.stop_reason === "refusal") {
         return { texto: "Desculpe, não posso ajudar com isso.", acoes }; // não grava a pergunta recusada

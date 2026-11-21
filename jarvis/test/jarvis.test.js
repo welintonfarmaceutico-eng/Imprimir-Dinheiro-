@@ -105,6 +105,8 @@ test("cérebro: executa ferramenta e mantém histórico intacto entre perguntas"
   assert.equal(pedidos[1].messages[2].content[0].type, "tool_result");
   assert.equal(pedidos[0].model, "claude-opus-5-5");
   assert.equal(pedidos[0].fallbacks, "default");
+  assert.deepEqual(pedidos[0].thinking, { type: "adaptive", block_binding: { prefix_mismatch_behavior: "drop_block" } });
+  assert.ok(pedidos[0].betas.includes("thinking-binding-controls-2026-08-01"));
 
   // Segunda pergunta: o histórico salvo volta idêntico, com a nova pergunta no fim.
   await cerebro.conversar("c1", "quanto foi?");
