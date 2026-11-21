@@ -1,5 +1,5 @@
 // Modelo do programa "Jarvis PC" (PowerShell do Windows). O servidor troca os __MARCADORES__
-// pela chave e pelos canais deste Jarvis na hora do download (veja computador.js).
+// pela chave e pelo endereço deste Jarvis na hora do download (veja computador.js).
 // Atenção ao editar: o texto fica dentro de String.raw`...`, então não pode ter crase nem "${".
 export const MODELO_PC = String.raw`# Jarvis PC: recebe ordens do seu Jarvis e executa neste computador.
 # Só faz três coisas: abrir programa, abrir site e mexer no volume.
@@ -7,8 +7,6 @@ export const MODELO_PC = String.raw`# Jarvis PC: recebe ordens do seu Jarvis e e
 $ErrorActionPreference = 'Stop'
 $Chave = '__CHAVE__'
 $Servidor = '__SERVIDOR__'
-$TopicoComandos = '__TOPICO_COMANDOS__'
-$TopicoRespostas = '__TOPICO_RESPOSTAS__'
 
 $Pasta = Join-Path $env:APPDATA 'JarvisPC'
 $Destino = Join-Path $Pasta 'jarvis-pc.ps1'
@@ -145,24 +143,26 @@ function Volume([string]$pedido) {
   throw 'Não entendi o pedido de volume.'
 }
 
+function Agora() { return [DateTimeOffset]::UtcNow.ToUnixTimeSeconds() }
+
 function Responder([string]$id, [bool]$ok, [string]$mensagem) {
   $okTexto = 'false'
   if ($ok) { $okTexto = 'true' }
-  $corpo = @{ id = $id; ok = $ok; mensagem = $mensagem; sig = (Assinar ($id + '|' + $okTexto + '|' + $mensagem)) } | ConvertTo-Json -Compress
-  Invoke-RestMethod -Method Post -Uri ($Servidor + '/' + $TopicoRespostas) -Body ([Text.Encoding]::UTF8.GetBytes($corpo)) -ContentType 'text/plain; charset=utf-8' | Out-Null
+  if ($mensagem.Length -gt 500) { $mensagem = $mensagem.Substring(0, 500) }
+  $ts = Agora
+  $corpo = @{ id = $id; ok = $ok; mensagem = $mensagem; ts = $ts; sig = (Assinar ($id + '|' + $okTexto + '|' + $mensagem + '|' + $ts)) } | ConvertTo-Json -Compress
+  Invoke-RestMethod -Method Post -Uri ($Servidor + '/api/pc/resposta') -Body ([Text.Encoding]::UTF8.GetBytes($corpo)) -ContentType 'application/json; charset=utf-8' -TimeoutSec 30 | Out-Null
 }
 
 $Vistos = New-Object 'System.Collections.Generic.HashSet[string]'
 
-function Processar([string]$texto) {
-  try { $c = $texto | ConvertFrom-Json } catch { return }
-  if (-not $c.id -or -not $c.sig) { return }
+function Processar($c) {
+  if (-not $c -or -not $c.id -or -not $c.sig) { return }
   if (-not $Vistos.Add([string]$c.id)) { return }
   $alvo = [string]$c.alvo
   $esperado = Assinar ([string]$c.id + '|' + [string]$c.acao + '|' + $alvo + '|' + [string]$c.ts)
   if ($c.sig -ne $esperado) { Registrar 'Ordem com assinatura inválida: ignorada.'; return }
-  $agora = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
-  if ([Math]::Abs($agora - [long]$c.ts) -gt 300) { Registrar 'Ordem antiga: ignorada.'; return }
+  if ([Math]::Abs((Agora) - [long]$c.ts) -gt 300) { Registrar 'Ordem antiga: ignorada.'; return }
   try {
     switch ([string]$c.acao) {
       'abrir_programa' { $msg = AbrirPrograma $alvo }
@@ -179,25 +179,29 @@ function Processar([string]$texto) {
   }
 }
 
-# ---------- Fica ouvindo as ordens ----------
-Add-Type -AssemblyName System.Net.Http
-$Cliente = New-Object System.Net.Http.HttpClient
-$Cliente.Timeout = [System.Threading.Timeout]::InfiniteTimeSpan
+# ---------- Fica esperando as ordens ----------
+# Pergunta ao Jarvis se tem ordem nova; cada pergunta fica aguardando até ~25 s por uma resposta.
 Registrar 'Jarvis PC iniciado.'
 while ($true) {
   try {
-    $fluxo = $Cliente.GetStreamAsync($Servidor + '/' + $TopicoComandos + '/json').GetAwaiter().GetResult()
-    $leitor = New-Object System.IO.StreamReader($fluxo, [Text.Encoding]::UTF8)
-    while ($true) {
-      $linha = $leitor.ReadLine()
-      if ($null -eq $linha) { break }
-      if (-not $linha.Trim()) { continue }
-      $evento = $linha | ConvertFrom-Json
-      if ($evento.event -eq 'message') { Processar ([string]$evento.message) }
+    $ts = Agora
+    $url = $Servidor + '/api/pc/esperar?ts=' + $ts + '&sig=' + (Assinar ('esperar|' + $ts))
+    $r = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 60
+    if ($r.StatusCode -eq 200) {
+      # Lê os bytes crus em UTF-8 (o PowerShell 5 erra os acentos se ler o texto pronto).
+      $texto = [Text.Encoding]::UTF8.GetString($r.RawContentStream.ToArray())
+      if ($texto.Trim()) { Processar ($texto | ConvertFrom-Json) }
     }
   } catch {
-    Registrar ('Conexão perdida, tentando de novo: ' + $_.Exception.Message)
+    $codigo = 0
+    try { $codigo = [int]$_.Exception.Response.StatusCode } catch {}
+    if ($codigo -eq 401) {
+      Registrar 'O Jarvis não reconheceu este PC (chave nova?). Baixe o programa de novo em Ajustes.'
+      Start-Sleep -Seconds 300
+    } else {
+      Registrar ('Sem conexão, tentando de novo: ' + $_.Exception.Message)
+      Start-Sleep -Seconds 10
+    }
   }
-  Start-Sleep -Seconds 5
 }
 `;
