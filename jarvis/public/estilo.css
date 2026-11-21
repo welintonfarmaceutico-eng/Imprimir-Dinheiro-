@@ -186,7 +186,7 @@ main {
 }
 .anel { position: absolute; inset: 0; border-radius: 50%; border: 2px solid var(--acento); opacity: .7; }
 .a1 { border-style: dashed; animation: girar 18s linear infinite; }
-.a2 { inset: 22px; border-width: 4px; border-color: var(--acento) transparent var(--acento) transparent; animation: girar 6s linear infinite reverse; }
+.a2 { inset: 8px; border-width: 3px; opacity: .55; border-color: var(--acento) transparent var(--acento) transparent; animation: girar 6s linear infinite reverse; }
 .a3 { inset: 46px; border-width: 1px; box-shadow: 0 0 24px var(--acento) inset; animation: girar 10s linear infinite; scale: calc(1 + (var(--pulso) - 1) * .5); transition: scale .12s ease-out; }
 .nucleo {
   position: absolute; inset: 72px; border-radius: 50%;
@@ -196,6 +196,8 @@ main {
   scale: var(--pulso);
   transition: scale .12s ease-out, box-shadow .12s ease-out;
 }
+.nucleo-canvas { position: absolute; inset: 16px; width: calc(100% - 32px); height: calc(100% - 32px); border-radius: 50%; }
+.formato canvas { width: 56px; height: 56px; display: block; }
 body.ouvindo .nucleo { background: radial-gradient(circle, var(--nucleo-centro) 0%, #9dffcf 30%, var(--verde) 60%, transparent 72%); box-shadow: 0 0 calc(50px * var(--pulso)) var(--verde); animation-duration: .8s; }
 body.ouvindo .anel { border-color: var(--verde); }
 body.pensando .a2 { animation-duration: 1s; }
@@ -268,6 +270,7 @@ dialog h3 { font-family: "Orbitron", sans-serif; font-size: 15px; letter-spacing
   .centro { order: -1; }
   .reator { width: 160px; height: 160px; }
   .a2 { inset: 16px; } .a3 { inset: 34px; } .nucleo { inset: 54px; }
+  .nucleo-canvas { inset: 10px; width: calc(100% - 20px); height: calc(100% - 20px); }
   .conversa { max-height: 50vh; }
   header { padding: 10px 16px; }
   .relogio { display: none; }

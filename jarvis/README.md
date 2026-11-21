@@ -19,7 +19,8 @@ Os painéis laterais mostram os lembretes, as notas e o resumo financeiro do mê
 Outros recursos:
 - **Resposta em tempo real:** o texto aparece enquanto é gerado, e a voz começa na primeira frase, sem esperar a resposta inteira.
 - **Botões rápidos** (+ Gasto/Ganho, + Nota, + Lembrete): salvam direto, sem usar a IA, e por isso não custam nada.
-- **Ajustes (⚙):** cinco temas de cor (azul, vermelho, verde, roxo e claro), escolha da voz e da velocidade da fala, e um botão para testar a voz. O círculo pulsa a cada palavra falada ou ouvida.
+- **Ajustes (⚙):** cinco temas de cor (azul, vermelho, verde, roxo e claro), cinco formatos de núcleo animado (rede neural, galáxia, anéis, cristal e enxame), escolha da voz e da velocidade da fala, e um botão para testar a voz.
+- **Núcleo animado:** partículas em 3D (`public/nucleo.js`). Ficam calmas em repouso, verdes quando ele está ouvindo, giram mais rápido quando ele pensa e pulsam a cada palavra falada.
 - **Economia:** a conversa recomeça sozinha a cada dia, porque conversas curtas custam menos. Notas, gastos e lembretes continuam guardados. Cada pergunta faz no máximo 2 pesquisas na internet.
 
 ## Como rodar

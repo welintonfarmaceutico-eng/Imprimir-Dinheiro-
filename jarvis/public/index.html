@@ -52,8 +52,8 @@
 
     <section class="centro">
       <button class="reator" id="reator" aria-label="Falar com o Jarvis">
-        <span class="anel a1"></span><span class="anel a2"></span><span class="anel a3"></span>
-        <span class="nucleo"></span>
+        <span class="anel a1"></span><span class="anel a2"></span>
+        <canvas class="nucleo-canvas" id="nucleo" aria-hidden="true"></canvas>
       </button>
       <div class="estado" id="estado">Toque no círculo e fale</div>
 
@@ -98,6 +98,8 @@
       <div class="campos">
         <label><span>Tema</span></label>
         <div class="temas" id="temas"></div>
+        <label><span>Formato do núcleo</span></label>
+        <div class="temas formatos" id="formatos"></div>
         <label><span>Voz</span>
           <select id="escolhaVoz"><option value="">Automática</option></select>
         </label>
@@ -110,6 +112,7 @@
     </form>
   </dialog>
 
+  <script src="nucleo.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
