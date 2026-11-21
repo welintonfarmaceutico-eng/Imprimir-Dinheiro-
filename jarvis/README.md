@@ -49,6 +49,7 @@ Depois abra **http://localhost:3000** no **Chrome** ou no **Edge** e permita o u
 | `PORT` | Porta do servidor. O padrão é `3000`. |
 | `GOOGLE_CLIENT_ID` e `GOOGLE_CLIENT_SECRET` | Para ligar o Google Agenda (veja abaixo). |
 | `WHATSAPP_TELEFONE` e `WHATSAPP_APIKEY` | Para receber os lembretes no WhatsApp (veja abaixo). |
+| `JARVIS_RESUMO_HORA` | Hora do resumo diário no WhatsApp (0 a 23). O padrão é `7`. Use `desligado` para não receber. |
 
 ## Publicar no Netlify (usar no celular de qualquer lugar)
 
@@ -97,9 +98,13 @@ Os avisos usam o **CallMeBot**, um serviço gratuito que manda mensagens para o 
 4. No Netlify, crie as variáveis:
    - `WHATSAPP_TELEFONE`: seu número **exatamente como aparece na mensagem de ativação do robô**, com DDI e DDD, ex.: `+553199998888`. Atenção: muitos números do Brasil estão registrados no WhatsApp **sem o 9 extra**. Se o número tiver um 9 a mais ou a menos, o CallMeBot responde "APIKey is invalid".
    - `WHATSAPP_APIKEY`: a apikey recebida (marque como **secret**)
-5. Faça um novo deploy e toque em **Testar aviso no WhatsApp** na tela do Jarvis.
+5. Faça um novo deploy e toque em **Mandar resumo do dia no WhatsApp** na tela do Jarvis.
 
 A cada minuto, a função agendada `lembretes-whatsapp` confere os lembretes que acabaram de vencer e manda cada um uma vez só. Lembretes vencidos há mais de 30 minutos não são enviados.
+
+### Resumo diário
+
+Todo dia, às 7h (ou na hora de `JARVIS_RESUMO_HORA`), chega no WhatsApp um resumo com os compromissos do Google Agenda, os lembretes do dia e as finanças do mês. O resumo é montado sem a IA, então **não gasta crédito da Anthropic**. Se o Google Agenda estiver desconectado, o resumo avisa para reconectar.
 
 ## Jarvis PC (abrir programas, sites e volume no Windows)
 
