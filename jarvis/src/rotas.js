@@ -8,6 +8,7 @@ import { Cerebro } from "./cerebro.js";
 import { GoogleAgenda } from "./google.js";
 import { WhatsApp, enviarLembretesVencidos } from "./whatsapp.js";
 import { Computador } from "./computador.js";
+import { enviarResumoDiario, montarResumo } from "./resumo.js";
 
 const json = (dados, status = 200) => Response.json(dados, { status });
 const ID_VALIDO = /^[A-Za-z0-9-]{1,64}$/;
@@ -225,7 +226,8 @@ export function criarJarvis(armazem, { senha = process.env.JARVIS_SENHA || "", c
         return json({ configurado: whatsapp.configurado });
       case "POST /api/whatsapp/teste":
         try {
-          return json(await whatsapp.enviar("✅ Teste do Jarvis: os lembretes vão chegar aqui."));
+          // O teste manda o próprio resumo do dia: serve de teste e de resumo na hora.
+          return json(await whatsapp.enviar(await montarResumo(banco, agenda)));
         } catch (erro) {
           return json({ erro: erro.message }, 400);
         }
@@ -253,7 +255,12 @@ export function criarJarvis(armazem, { senha = process.env.JARVIS_SENHA || "", c
 }
 
 // Usada a cada minuto (função agendada do Netlify, ou o relógio do servidor local).
+// Manda os lembretes que venceram e, na hora marcada, o resumo do dia.
 export async function verificarLembretesWhatsApp(armazem) {
   definirFuso();
-  return enviarLembretesVencidos(new Banco(armazem), armazem, new WhatsApp());
+  const banco = new Banco(armazem);
+  const whatsapp = new WhatsApp();
+  const resultado = await enviarLembretesVencidos(banco, armazem, whatsapp);
+  const resumo = await enviarResumoDiario(banco, armazem, whatsapp, new GoogleAgenda(armazem));
+  return { ...resultado, resumo: resumo.enviado };
 }

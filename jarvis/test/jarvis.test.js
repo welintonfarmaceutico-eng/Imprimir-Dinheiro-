@@ -499,3 +499,57 @@ test("blobs: abre a gaveta de novo a cada uso (o passe de acesso vence entre ped
   await armazem.listar("notas");
   assert.ok(aberturas >= 3, `abriu ${aberturas} vez(es)`);
 });
+
+// ---------- Resumo diário no WhatsApp ----------
+import { enviarResumoDiario, horaDoResumo, montarResumo } from "../src/resumo.js";
+
+test("resumo diário: sai uma vez na hora marcada, com agenda, lembretes e finanças", async () => {
+  process.env.TZ = "America/Sao_Paulo";
+  const armazem = new ArmazemBlobs(blobsFalso());
+  const banco = new Banco(armazem);
+  const cb = callmebotFalso();
+  const zap = new WhatsApp({ fetch: cb.f, env: { WHATSAPP_TELEFONE: "+55", WHATSAPP_APIKEY: "1" } });
+  const agenda = {
+    configurado: true,
+    conectado: async () => true,
+    listarEventos: async () => [{ titulo: "Dentista", inicio: "2026-11-21T14:30:00-03:00", diaInteiro: false }],
+  };
+  await banco.adicionarLembrete("pagar a luz", "2026-11-21T18:00:00-03:00");
+  await banco.adicionarLembrete("amanhã", "2026-11-22T09:00:00-03:00");
+  await banco.adicionarTransacao({ tipo: "entrada", valor: 1000, categoria: "salário", data: "2026-11-05" });
+  await banco.adicionarTransacao({ tipo: "saida", valor: 250.5, categoria: "mercado", data: "2026-11-10" });
+
+  const cedo = new Date("2026-11-21T06:59:00-03:00");
+  const hora = new Date("2026-11-21T07:00:00-03:00");
+  assert.deepEqual(await enviarResumoDiario(banco, armazem, zap, agenda, cedo, 7), { enviado: false });
+  assert.deepEqual(await enviarResumoDiario(banco, armazem, zap, agenda, hora, 7), { enviado: true });
+  assert.deepEqual(await enviarResumoDiario(banco, armazem, zap, agenda, new Date("2026-11-21T07:01:00-03:00"), 7), { enviado: false });
+  assert.equal(cb.enviados.length, 1);
+  const texto = cb.enviados[0].texto;
+  assert.match(texto, /14:30 – Dentista/);
+  assert.match(texto, /18:00 – pagar a luz/);
+  assert.doesNotMatch(texto, /amanhã/);
+  assert.match(texto, /saldo R\$\s?749,50/);
+  assert.match(texto, /mercado R\$\s?250,50/);
+  // No dia seguinte manda de novo.
+  assert.deepEqual(await enviarResumoDiario(banco, armazem, zap, agenda, new Date("2026-11-22T07:00:00-03:00"), 7), { enviado: true });
+});
+
+test("resumo diário: Google desconectado avisa; erro tenta só 3 vezes; hora configurável", async () => {
+  process.env.TZ = "America/Sao_Paulo";
+  const armazem = new ArmazemBlobs(blobsFalso());
+  const banco = new Banco(armazem);
+  const texto = await montarResumo(banco, { configurado: true, conectado: async () => false });
+  assert.match(texto, /desconectado/);
+  assert.doesNotMatch(await montarResumo(banco, { configurado: false }), /Agenda/);
+
+  const ruim = new WhatsApp({ fetch: callmebotFalso("APIKey is invalid").f, env: { WHATSAPP_TELEFONE: "+55", WHATSAPP_APIKEY: "1" } });
+  let chamadas = 0;
+  const contar = { configurado: true, enviar: async (t) => { chamadas++; return ruim.enviar(t); } };
+  for (let m = 0; m < 6; m++) await enviarResumoDiario(banco, armazem, contar, null, new Date(`2026-11-21T07:0${m}:00-03:00`), 7);
+  assert.equal(chamadas, 3);
+
+  assert.equal(horaDoResumo({}), 7);
+  assert.equal(horaDoResumo({ JARVIS_RESUMO_HORA: "8" }), 8);
+  assert.equal(horaDoResumo({ JARVIS_RESUMO_HORA: "desligado" }), null);
+});

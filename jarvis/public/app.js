@@ -640,7 +640,7 @@ botaoWhatsapp.addEventListener("click", async () => {
   botaoWhatsapp.disabled = true;
   try {
     await api("/api/whatsapp/teste", { method: "POST", body: "{}" });
-    adicionarMensagem("Mandei uma mensagem de teste para o seu WhatsApp.", "jarvis");
+    adicionarMensagem("Mandei o resumo do dia para o seu WhatsApp.", "jarvis");
   } catch (erro) {
     adicionarMensagem(erro.message, "jarvis erro");
   } finally {
