@@ -7,6 +7,7 @@ import { criarFerramentas } from "./ferramentas.js";
 import { Cerebro } from "./cerebro.js";
 import { GoogleAgenda } from "./google.js";
 import { WhatsApp, enviarLembretesVencidos } from "./whatsapp.js";
+import { Computador } from "./computador.js";
 
 const json = (dados, status = 200) => Response.json(dados, { status });
 const ID_VALIDO = /^[A-Za-z0-9-]{1,64}$/;
@@ -44,12 +45,13 @@ export function explicarErro(erro) {
   return { mensagem: "Tive um problema para pensar agora. Tente de novo em instantes." };
 }
 
-export function criarJarvis(armazem, { senha = process.env.JARVIS_SENHA || "", cliente = null } = {}) {
+export function criarJarvis(armazem, { senha = process.env.JARVIS_SENHA || "", cliente = null, computadorOpcoes = {} } = {}) {
   definirFuso();
   const banco = new Banco(armazem);
   const agenda = new GoogleAgenda(armazem);
   const whatsapp = new WhatsApp();
-  const cerebro = new Cerebro(criarFerramentas(banco, agenda, whatsapp), banco);
+  const computador = new Computador(armazem, computadorOpcoes);
+  const cerebro = new Cerebro(criarFerramentas(banco, agenda, whatsapp, computador), banco);
   if (cliente) cerebro.cliente = cliente; // só nos testes
 
   function autorizado(req) {
@@ -227,6 +229,21 @@ export function criarJarvis(armazem, { senha = process.env.JARVIS_SENHA || "", c
         } catch (erro) {
           return json({ erro: erro.message }, 400);
         }
+      case "GET /api/pc/status":
+        return json({ conectado: await computador.configurado() });
+      case "GET /api/pc/instalador":
+        return new Response(await computador.instalador(), {
+          headers: { "content-type": "application/octet-stream", "content-disposition": 'attachment; filename="jarvis-pc.ps1"', "cache-control": "no-store" },
+        });
+      case "POST /api/pc/testar":
+        try {
+          return json(await computador.executar("ping"));
+        } catch (erro) {
+          return json({ erro: erro.message }, 400);
+        }
+      case "POST /api/pc/desconectar":
+        await computador.desconectar();
+        return json({ ok: true });
       case "GET /api/lembretes/vencidos":
         return json(await banco.lembretesVencidos());
       default:

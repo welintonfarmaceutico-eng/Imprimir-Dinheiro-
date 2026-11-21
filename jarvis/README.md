@@ -12,6 +12,7 @@ Assistente pessoal que roda no navegador do celular e do PC. Você fala, ele res
 | Anotações | "Anota que a senha do wi-fi da loja é 1234" / "Quais são minhas notas?" |
 | Controle financeiro | "Gastei 35 reais no almoço" / "Recebi 2 mil de vendas" / "Quanto gastei este mês?" |
 | Avisos no WhatsApp | Os lembretes chegam no seu WhatsApp na hora marcada, mesmo com o site fechado. "Manda no meu WhatsApp a lista de compras" |
+| Computador (Jarvis PC) | "Abre o Spotify no PC" / "Abre o YouTube no computador" / "Aumenta o volume do PC" |
 | Google Agenda | "O que tenho amanhã?" / "Marca dentista sexta às 14h" / "Desmarca a reunião de quinta" |
 
 Os painéis laterais mostram os lembretes, as notas e o resumo financeiro do mês, e se atualizam sozinhos.
@@ -100,6 +101,22 @@ Os avisos usam o **CallMeBot**, um serviço gratuito que manda mensagens para o 
 
 A cada minuto, a função agendada `lembretes-whatsapp` confere os lembretes que acabaram de vencer e manda cada um uma vez só. Lembretes vencidos há mais de 30 minutos não são enviados.
 
+## Jarvis PC (abrir programas, sites e volume no Windows)
+
+Um programa pequeno em PowerShell, que já vem no Windows, recebe as ordens do Jarvis e as executa no computador.
+
+1. No Jarvis, abra **⚙ Ajustes → Computador** e toque em **Baixar programa do PC**. O arquivo `jarvis-pc.ps1` já vem com a sua chave secreta.
+2. No computador, clique com o botão direito no arquivo → **Propriedades** → marque **Desbloquear** → **OK**.
+3. Clique com o botão direito de novo → **Executar com o PowerShell**. No Windows 11, essa opção fica em "Mostrar mais opções".
+4. Aparece a mensagem "Jarvis PC instalado e conectado!". A partir daí, ele inicia sozinho junto com o Windows.
+
+Como funciona:
+- As ordens passam pelo **ntfy.sh**, um serviço gratuito de mensagens. O PC recebe na hora, sem consultar o Netlify o tempo todo.
+- Toda ordem e toda resposta são **assinadas com HMAC-SHA256**, usando a chave secreta. O programa ignora ordens falsas e ordens com mais de 5 minutos.
+- O programa só faz três coisas: **abrir programa** (atalhos do menu Iniciar e da Área de Trabalho, ou programas do Windows), **abrir site** (só endereços http ou https) e **volume**. Nunca roda comandos livres.
+- O programa fica instalado em `%APPDATA%\JarvisPC`, e o registro de atividades fica em `registro.txt`. O atalho para iniciar com o Windows fica na pasta Inicializar.
+- Para desligar: **⚙ Ajustes → Desconectar o PC**. Isso apaga a chave. Para remover o programa, apague o atalho "Jarvis PC" da pasta Inicializar (`shell:startup`) e a pasta `%APPDATA%\JarvisPC`.
+
 ## Custos
 
 O Jarvis usa o modelo Claude Opus 5.5 (US$ 4 por milhão de tokens de entrada e US$ 20 por milhão de saída). Uma pergunta simples custa frações de centavo. As pesquisas na internet têm uma cobrança extra por busca. Para economizar, mantenha `JARVIS_ESFORCO=low` e use **Nova conversa** quando mudar de assunto.
@@ -126,6 +143,8 @@ jarvis/
 ├── src/armazem.js             # onde salva: arquivo local ou Netlify Blobs
 ├── src/google.js              # conexão e acesso ao Google Agenda
 ├── src/whatsapp.js            # avisos no WhatsApp (CallMeBot)
+├── src/computador.js          # ponte com o Jarvis PC (ntfy.sh + assinatura HMAC)
+├── src/jarvis-pc-modelo.js    # o programa do Windows (PowerShell), preenchido no download
 ├── netlify/functions/lembretes-whatsapp.mjs  # confere os lembretes a cada minuto
 ├── public/                    # interface (HTML, CSS e JS com voz)
 └── test/                      # testes: npm test

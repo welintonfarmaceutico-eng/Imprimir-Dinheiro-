@@ -541,7 +541,55 @@ $("testarVoz").addEventListener("click", () => {
   falando.falar("Olá! Esta é a minha voz. Como posso ajudar?").then(() => definirEstado(null));
   el.voz.checked = ligada;
 });
-$("botaoAjustes").addEventListener("click", () => { preencherVozes(); $("dialogoAjustes").showModal(); desenharMiniaturas(); });
+$("botaoAjustes").addEventListener("click", () => { preencherVozes(); $("dialogoAjustes").showModal(); desenharMiniaturas(); atualizarStatusPc(); });
+
+// ---------- Computador (Jarvis PC) ----------
+function mostrarStatusPc(texto, tipo = "") {
+  const p = $("statusPc");
+  p.textContent = texto;
+  p.className = `nota-pc ${tipo}`;
+}
+async function atualizarStatusPc() {
+  try {
+    const { conectado } = await api("/api/pc/status");
+    $("desconectarPc").hidden = !conectado;
+    $("testarPc").disabled = !conectado;
+    mostrarStatusPc(conectado
+      ? "Programa baixado. Com o PC ligado, peça: \"abre o YouTube no PC\" ou \"aumenta o volume do computador\"."
+      : "Baixe o programa e abra no seu computador com Windows. Ele deixa o Jarvis abrir programas, sites e mexer no volume.");
+  } catch (erro) {
+    mostrarStatusPc(erro.message, "ruim");
+  }
+}
+$("baixarPc").addEventListener("click", async () => {
+  try {
+    const resp = await fetch("/api/pc/instalador", { headers: { "x-jarvis-senha": senha } });
+    if (!resp.ok) throw new Error(resp.status === 401 ? "Entre de novo no Jarvis e tente outra vez." : `Erro ${resp.status}`);
+    const link = criar("a", { href: URL.createObjectURL(await resp.blob()), download: "jarvis-pc.ps1" });
+    document.body.append(link);
+    link.click();
+    link.remove();
+    mostrarStatusPc("Baixado! No computador: clique com o botão direito no arquivo, Propriedades, marque Desbloquear e OK. Depois, botão direito, Executar com o PowerShell.", "ok");
+    $("desconectarPc").hidden = false;
+    $("testarPc").disabled = false;
+  } catch (erro) {
+    mostrarStatusPc(erro.message, "ruim");
+  }
+});
+$("testarPc").addEventListener("click", async () => {
+  mostrarStatusPc("Chamando o PC...");
+  try {
+    const r = await api("/api/pc/testar", { method: "POST", body: "{}" });
+    mostrarStatusPc(r.mensagem || "PC conectado!", "ok");
+  } catch (erro) {
+    mostrarStatusPc(erro.message, "ruim");
+  }
+});
+$("desconectarPc").addEventListener("click", async () => {
+  if (!confirm("Desconectar o PC? O programa do computador para de receber ordens até você baixar de novo.")) return;
+  await api("/api/pc/desconectar", { method: "POST", body: "{}" }).catch(() => {});
+  atualizarStatusPc();
+});
 
 // ---------- Google Agenda ----------
 const botaoGoogle = $("botaoGoogle");

@@ -8,7 +8,7 @@ const obj = (properties) => ({
   additionalProperties: false,
 });
 
-export function criarFerramentas(banco, agenda = null, whatsapp = null) {
+export function criarFerramentas(banco, agenda = null, whatsapp = null, computador = null) {
   const ferramentas = [
     // ---------- Notas ----------
     {
@@ -169,6 +169,25 @@ export function criarFerramentas(banco, agenda = null, whatsapp = null) {
         input_schema: obj({ texto: { type: "string", description: "Texto da mensagem, sem markdown" } }),
       },
       executar: ({ texto }) => whatsapp.enviar(texto),
+    });
+  }
+
+  // ---------- Computador do usuário (programa Jarvis PC) ----------
+  if (computador) {
+    ferramentas.push({
+      definicao: {
+        name: "computador",
+        description:
+          "Executa uma ação no computador (PC) do usuário, pelo programa Jarvis PC. Use quando ele pedir algo \"no PC\" ou \"no computador\". " +
+          "Ações: abrir_programa (alvo = nome do programa, ex.: \"Spotify\", \"calculadora\", \"Word\"); " +
+          "abrir_site (alvo = endereço completo, ex.: \"https://www.youtube.com\"; para buscas use a página de busca do site); " +
+          "volume (alvo = \"subir\", \"descer\", \"mudo\", \"maximo\" ou um número de 0 a 100).",
+        input_schema: obj({
+          acao: { type: "string", enum: ["abrir_programa", "abrir_site", "volume"] },
+          alvo: { type: "string" },
+        }),
+      },
+      executar: ({ acao, alvo }) => computador.executar(acao, alvo),
     });
   }
 
