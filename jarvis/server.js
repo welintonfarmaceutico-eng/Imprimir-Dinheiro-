@@ -42,7 +42,8 @@ const servidor = http.createServer(async (req, res) => {
         duplex: temCorpo ? "half" : undefined,
       }));
       res.writeHead(resposta.status, Object.fromEntries(resposta.headers));
-      res.end(Buffer.from(await resposta.arrayBuffer()));
+      if (resposta.body) Readable.fromWeb(resposta.body).pipe(res); // repassa aos poucos (respostas em tempo real)
+      else res.end();
       return;
     }
 

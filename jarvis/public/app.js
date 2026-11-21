@@ -1,4 +1,4 @@
-// Interface do Jarvis: voz (ouvir e falar), conversa e painéis.
+// Interface do Jarvis: voz (ouvir e falar), conversa em tempo real, painéis, temas e cadastro rápido.
 const $ = (id) => document.getElementById(id);
 const el = {
   conversa: $("conversa"), texto: $("texto"), form: $("formulario"), estado: $("estado"),
@@ -13,12 +13,18 @@ const guardar = {
   ler(chave, padrao) { try { return localStorage.getItem(chave) ?? padrao; } catch { return padrao; } },
   escrever(chave, valor) { try { localStorage.setItem(chave, valor); } catch {} },
 };
-let conversaId = guardar.ler("jarvis.conversa", null) || novoId();
-guardar.escrever("jarvis.conversa", conversaId);
+function novoId() { return (crypto.randomUUID?.() || String(Math.random()).slice(2)); }
+function hojeLocal() { const d = new Date(); return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`; }
+
+// Uma conversa nova por dia: conversas curtas custam bem menos (o histórico é relido a cada mensagem).
+let conversaId = guardar.ler("jarvis.conversa", null);
+if (!conversaId || guardar.ler("jarvis.conversa.dia", "") !== hojeLocal()) {
+  conversaId = novoId();
+  guardar.escrever("jarvis.conversa", conversaId);
+  guardar.escrever("jarvis.conversa.dia", hojeLocal());
+}
 let senha = guardar.ler("jarvis.senha", "");
 el.voz.checked = guardar.ler("jarvis.voz", "1") === "1";
-
-function novoId() { return (crypto.randomUUID?.() || String(Math.random()).slice(2)); }
 
 // ---------- Estado visual ----------
 function definirEstado(estado, texto) {
@@ -29,34 +35,73 @@ function definirEstado(estado, texto) {
   }[estado] ?? (el.escuta.checked ? 'Diga "Jarvis" para chamar' : "Toque no círculo e fale");
 }
 
+// O círculo dá um "pulo" a cada palavra falada ou ouvida e volta devagar.
+let pulsoTimer = null;
+function pulsar(forca = 1.18) {
+  el.reator.style.setProperty("--pulso", String(forca));
+  clearTimeout(pulsoTimer);
+  pulsoTimer = setTimeout(() => el.reator.style.setProperty("--pulso", "1"), 140);
+}
+
 function adicionarMensagem(texto, tipo) {
   const div = document.createElement("div");
   div.className = `msg ${tipo}`;
   div.textContent = texto;
   el.conversa.appendChild(div);
   el.conversa.scrollTop = el.conversa.scrollHeight;
+  return div;
 }
 
 // ---------- Comunicação com o servidor ----------
+async function tratarNaoAutorizado(dados, repetir) {
+  // 401 sem a nossa mensagem = bloqueio do login do Netlify (sessão expirada).
+  if (dados.erro !== "Senha incorreta") {
+    throw new Error("Seu login expirou. Recarregue a página e entre de novo na sua conta do Netlify.");
+  }
+  const nova = prompt("Senha do Jarvis:");
+  if (nova === null) throw new Error("Senha necessária.");
+  senha = nova;
+  guardar.escrever("jarvis.senha", senha);
+  return repetir();
+}
+
 async function api(caminho, opcoes = {}) {
   const resp = await fetch(caminho, {
     ...opcoes,
     headers: { "Content-Type": "application/json", "x-jarvis-senha": senha, ...(opcoes.headers || {}) },
   });
   const dados = await resp.json().catch(() => ({}));
-  if (resp.status === 401) {
-    // 401 sem a nossa mensagem = bloqueio do login do Netlify (sessão expirada).
-    if (dados.erro !== "Senha incorreta") {
-      throw new Error("Seu login expirou. Recarregue a página e entre de novo na sua conta do Netlify.");
-    }
-    const nova = prompt("Senha do Jarvis:");
-    if (nova === null) throw new Error("Senha necessária.");
-    senha = nova;
-    guardar.escrever("jarvis.senha", senha);
-    return api(caminho, opcoes);
-  }
+  if (resp.status === 401) return tratarNaoAutorizado(dados, () => api(caminho, opcoes));
   if (!resp.ok) throw new Error(dados.erro || `Erro ${resp.status}`);
   return dados;
+}
+
+// Conversa em tempo real: lê os eventos que o servidor manda enquanto a resposta é gerada.
+async function conversarAoVivo(corpo, aoEvento) {
+  const resp = await fetch("/api/conversar/ao-vivo", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-jarvis-senha": senha },
+    body: JSON.stringify(corpo),
+  });
+  if (!resp.ok || !resp.body) {
+    const dados = await resp.json().catch(() => ({}));
+    if (resp.status === 401) return tratarNaoAutorizado(dados, () => conversarAoVivo(corpo, aoEvento));
+    throw new Error(dados.erro || `Erro ${resp.status}`);
+  }
+  const leitor = resp.body.getReader();
+  const decodificador = new TextDecoder();
+  let resto = "";
+  for (;;) {
+    const { value, done } = await leitor.read();
+    if (done) break;
+    resto += decodificador.decode(value, { stream: true });
+    let fim;
+    while ((fim = resto.indexOf("\n\n")) !== -1) {
+      const bloco = resto.slice(0, fim);
+      resto = resto.slice(fim + 2);
+      if (bloco.startsWith("data: ")) aoEvento(JSON.parse(bloco.slice(6)));
+    }
+  }
 }
 
 let ocupado = false;
@@ -68,19 +113,47 @@ async function enviar(texto) {
   falando.cancelar();
   adicionarMensagem(texto, "usuario");
   definirEstado("pensando");
+
+  let bolha = null;
+  let escrito = "";
+  let paraFalar = ""; // texto ainda não falado (fala frase por frase, sem esperar o fim)
+  const falarFrasesProntas = (final = false) => {
+    let corte;
+    // Uma frase termina em . ! ? … ou quebra de linha seguida de espaço (não corta "R$ 1.500,00").
+    while ((corte = paraFalar.search(/[.!?…:](\s)|\n/)) !== -1) {
+      const frase = paraFalar.slice(0, corte + 1);
+      paraFalar = paraFalar.slice(corte + 1);
+      falando.enfileirar(frase);
+    }
+    if (final && paraFalar.trim()) { falando.enfileirar(paraFalar); paraFalar = ""; }
+  };
+
   try {
-    const { texto: resposta, acoes } = await api("/api/conversar", {
-      method: "POST",
-      body: JSON.stringify({ conversa: conversaId, texto }),
+    await conversarAoVivo({ conversa: conversaId, texto }, (evento) => {
+      if (evento.tipo === "texto") {
+        if (!bolha) { bolha = adicionarMensagem("", "jarvis digitando"); definirEstado("falando", "Respondendo..."); }
+        escrito += evento.delta;
+        paraFalar += evento.delta;
+        bolha.textContent = escrito;
+        el.conversa.scrollTop = el.conversa.scrollHeight;
+        falarFrasesProntas();
+      } else if (evento.tipo === "fim") {
+        if (!escrito.trim()) { bolha = adicionarMensagem(evento.texto, "jarvis"); paraFalar = evento.texto; }
+        falarFrasesProntas(true);
+        if (evento.acoes?.length) atualizarPaineis();
+        if (evento.acoes?.some((a) => a.startsWith("agenda_"))) atualizarAgenda();
+      } else if (evento.tipo === "erro") {
+        falarFrasesProntas(true);
+        adicionarMensagem(evento.mensagem, "jarvis erro");
+        falando.enfileirar(evento.mensagem);
+      }
     });
-    adicionarMensagem(resposta, "jarvis");
-    if (acoes?.length) atualizarPaineis();
-    if (acoes?.some((a) => a.startsWith("agenda_"))) atualizarAgenda();
-    await falando.falar(resposta);
   } catch (erro) {
     adicionarMensagem(erro.message, "jarvis erro");
-    await falando.falar(erro.message);
+    falando.enfileirar(erro.message);
   } finally {
+    bolha?.classList.remove("digitando");
+    await falando.terminar();
     ocupado = false;
     definirEstado(null);
     if (el.escuta.checked) comecarAOuvir();
@@ -90,28 +163,50 @@ async function enviar(texto) {
 // ---------- Fala (texto para voz) ----------
 const falando = {
   voz: null,
+  velocidade: Number(guardar.ler("jarvis.velocidade", "1.05")) || 1.05,
+  pendentes: 0,
+  aoTerminar: [],
+  vozesPt() {
+    return ("speechSynthesis" in window ? speechSynthesis.getVoices() : []).filter((v) => v.lang?.toLowerCase().startsWith("pt"));
+  },
   escolherVoz() {
-    const vozes = speechSynthesis.getVoices().filter((v) => v.lang?.toLowerCase().startsWith("pt"));
-    this.voz = vozes.find((v) => /pt-br/i.test(v.lang) && /google|natural|online/i.test(v.name))
+    const vozes = this.vozesPt();
+    const salva = guardar.ler("jarvis.vozNome", "");
+    this.voz = vozes.find((v) => v.name === salva)
+      || vozes.find((v) => /pt-br/i.test(v.lang) && /google|natural|online/i.test(v.name))
       || vozes.find((v) => /pt-br/i.test(v.lang)) || vozes[0] || null;
   },
-  falar(texto) {
-    if (!el.voz.checked || !("speechSynthesis" in window) || !texto) return Promise.resolve();
-    return new Promise((resolve) => {
-      const fala = new SpeechSynthesisUtterance(texto);
-      fala.lang = "pt-BR";
-      if (this.voz) fala.voice = this.voz;
-      fala.rate = 1.05;
-      fala.onend = fala.onerror = () => resolve();
-      definirEstado("falando");
-      speechSynthesis.speak(fala);
-    });
+  // Põe uma frase na fila de fala (o navegador fala uma depois da outra).
+  enfileirar(texto) {
+    if (!el.voz.checked || !("speechSynthesis" in window) || !texto?.trim()) return;
+    const fala = new SpeechSynthesisUtterance(texto.trim());
+    fala.lang = "pt-BR";
+    if (this.voz) fala.voice = this.voz;
+    fala.rate = this.velocidade;
+    fala.onstart = () => definirEstado("falando");
+    fala.onboundary = () => pulsar(1.2);
+    fala.onend = fala.onerror = () => {
+      this.pendentes = Math.max(0, this.pendentes - 1);
+      if (!this.pendentes) this.aoTerminar.splice(0).forEach((f) => f());
+    };
+    this.pendentes++;
+    speechSynthesis.speak(fala);
   },
-  cancelar() { if ("speechSynthesis" in window) speechSynthesis.cancel(); },
+  // Promessa que termina quando tudo o que está na fila foi falado.
+  terminar() {
+    if (!this.pendentes) return Promise.resolve();
+    return new Promise((resolve) => this.aoTerminar.push(resolve));
+  },
+  falar(texto) { this.enfileirar(texto); return this.terminar(); },
+  cancelar() {
+    if ("speechSynthesis" in window) speechSynthesis.cancel();
+    this.pendentes = 0;
+    this.aoTerminar.splice(0).forEach((f) => f());
+  },
 };
 if ("speechSynthesis" in window) {
   falando.escolherVoz();
-  speechSynthesis.onvoiceschanged = () => falando.escolherVoz();
+  speechSynthesis.onvoiceschanged = () => { falando.escolherVoz(); preencherVozes(); };
 }
 
 // ---------- Escuta (voz para texto) ----------
@@ -127,6 +222,7 @@ function criarReconhecimento() {
   r.continuous = el.escuta.checked;
 
   r.onresult = (evento) => {
+    pulsar(1.15); // o círculo reage enquanto você fala
     let final = "", parcial = "";
     for (let i = evento.resultIndex; i < evento.results.length; i++) {
       const t = evento.results[i][0].transcript;
@@ -256,6 +352,127 @@ async function atualizarPaineis() {
   }
 }
 
+// ---------- Cadastro rápido (sem IA, custo zero) ----------
+const CATEGORIAS = ["alimentação", "transporte", "moradia", "saúde", "lazer", "educação", "compras", "contas", "salário", "vendas", "outros"];
+const rapido = {
+  dialogo: $("dialogoRapido"), form: $("formRapido"), campos: $("camposRapido"),
+  titulo: $("tituloRapido"), erro: $("erroRapido"), salvar: $("salvarRapido"), tipo: null,
+};
+
+function campo(rotulo, elemento) {
+  const label = document.createElement("label");
+  const span = document.createElement("span"); span.textContent = rotulo;
+  label.append(span, elemento);
+  return label;
+}
+function criar(tag, props = {}) { return Object.assign(document.createElement(tag), props); }
+
+function abrirRapido(tipo) {
+  rapido.tipo = tipo;
+  rapido.erro.textContent = "";
+  rapido.campos.replaceChildren();
+  if (tipo === "transacao") {
+    rapido.titulo.textContent = "Gasto ou ganho";
+    const segmentos = criar("div", { className: "segmentos" });
+    for (const [valor, nome] of [["saida", "Gasto"], ["entrada", "Ganho"]]) {
+      const id = `tipo-${valor}`;
+      segmentos.append(criar("input", { type: "radio", name: "tipo", id, value: valor, checked: valor === "saida" }), criar("label", { htmlFor: id, textContent: nome }));
+    }
+    const lista = criar("datalist", { id: "listaCategorias" });
+    CATEGORIAS.forEach((c) => lista.append(criar("option", { value: c })));
+    const categoria = criar("input", { name: "categoria", placeholder: "alimentação", required: true });
+    categoria.setAttribute("list", "listaCategorias");
+    rapido.campos.append(
+      segmentos,
+      campo("Valor (R$)", criar("input", { name: "valor", inputMode: "decimal", placeholder: "35,90", required: true, autocomplete: "off" })),
+      campo("Categoria", categoria), lista,
+      campo("Descrição (opcional)", criar("input", { name: "descricao", placeholder: "almoço", autocomplete: "off" })),
+    );
+  } else if (tipo === "nota") {
+    rapido.titulo.textContent = "Nova nota";
+    rapido.campos.append(campo("Nota", criar("textarea", { name: "texto", rows: 4, required: true })));
+  } else {
+    rapido.titulo.textContent = "Novo lembrete";
+    const quando = criar("input", { type: "datetime-local", name: "quando", required: true });
+    const daquiUmaHora = new Date(Date.now() + 60 * 60 * 1000);
+    daquiUmaHora.setMinutes(0, 0, 0);
+    const p = (n) => String(n).padStart(2, "0");
+    quando.value = `${daquiUmaHora.getFullYear()}-${p(daquiUmaHora.getMonth() + 1)}-${p(daquiUmaHora.getDate())}T${p(daquiUmaHora.getHours())}:00`;
+    rapido.campos.append(
+      campo("O que lembrar", criar("input", { name: "texto", required: true, autocomplete: "off" })),
+      campo("Quando", quando),
+    );
+  }
+  rapido.dialogo.showModal();
+  rapido.campos.querySelector("input:not([type=radio]), textarea")?.focus();
+}
+
+rapido.form.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const dados = Object.fromEntries(new FormData(rapido.form));
+  const caminho = { transacao: "/api/transacoes", nota: "/api/notas", lembrete: "/api/lembretes" }[rapido.tipo];
+  if (rapido.tipo === "lembrete") dados.quando = new Date(dados.quando).toISOString();
+  rapido.salvar.disabled = true;
+  try {
+    await api(caminho, { method: "POST", body: JSON.stringify(dados) });
+    rapido.dialogo.close();
+    atualizarPaineis();
+  } catch (erro) {
+    rapido.erro.textContent = erro.message;
+  } finally {
+    rapido.salvar.disabled = false;
+  }
+});
+$("cancelarRapido").addEventListener("click", () => rapido.dialogo.close());
+document.querySelectorAll("[data-rapido]").forEach((b) => b.addEventListener("click", () => abrirRapido(b.dataset.rapido)));
+
+// ---------- Ajustes: tema e voz ----------
+const TEMAS = [
+  ["azul", "Azul", "#00d4ff"], ["vermelho", "Vermelho", "#ffc440"], ["verde", "Verde", "#39ff78"],
+  ["roxo", "Roxo", "#c86eff"], ["claro", "Claro", "#0078be"],
+];
+function aplicarTema(tema) {
+  document.documentElement.dataset.tema = tema;
+  guardar.escrever("jarvis.tema", tema);
+  document.querySelector('meta[name="theme-color"]').content = getComputedStyle(document.documentElement).getPropertyValue("--fundo").trim();
+  document.querySelectorAll(".tema").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.opcao === tema)));
+}
+for (const [id, nome, cor] of TEMAS) {
+  const b = criar("button", { type: "button", className: "tema" });
+  b.dataset.opcao = id; // não usar "data-tema": o CSS pintaria o botão com o próprio tema
+  const bolinha = criar("i");
+  bolinha.style.background = cor;
+  bolinha.style.color = cor;
+  b.append(bolinha, document.createTextNode(nome));
+  b.addEventListener("click", () => aplicarTema(id));
+  $("temas").append(b);
+}
+aplicarTema(document.documentElement.dataset.tema || "azul");
+
+function preencherVozes() {
+  const select = $("escolhaVoz");
+  const salva = guardar.ler("jarvis.vozNome", "");
+  select.replaceChildren(criar("option", { value: "", textContent: "Automática" }));
+  for (const v of falando.vozesPt()) select.append(criar("option", { value: v.name, textContent: `${v.name} (${v.lang})`, selected: v.name === salva }));
+}
+const formatarVelocidade = (v) => `${Number(v).toFixed(2).replace(".", ",")}×`;
+$("velocidade").value = String(falando.velocidade);
+$("valorVelocidade").textContent = formatarVelocidade(falando.velocidade);
+$("velocidade").addEventListener("input", (e) => {
+  falando.velocidade = Number(e.target.value);
+  guardar.escrever("jarvis.velocidade", e.target.value);
+  $("valorVelocidade").textContent = formatarVelocidade(e.target.value);
+});
+$("escolhaVoz").addEventListener("change", (e) => { guardar.escrever("jarvis.vozNome", e.target.value); falando.escolherVoz(); });
+$("testarVoz").addEventListener("click", () => {
+  falando.cancelar();
+  const ligada = el.voz.checked;
+  el.voz.checked = true;
+  falando.falar("Olá! Esta é a minha voz. Como posso ajudar?").then(() => definirEstado(null));
+  el.voz.checked = ligada;
+});
+$("botaoAjustes").addEventListener("click", () => { preencherVozes(); $("dialogoAjustes").showModal(); });
+
 // ---------- Google Agenda ----------
 const botaoGoogle = $("botaoGoogle");
 const horaCurta = (iso) => new Date(iso).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
@@ -309,7 +526,8 @@ botaoWhatsapp.addEventListener("click", async () => {
   } catch (erro) {
     adicionarMensagem(erro.message, "jarvis erro");
   } finally {
-    botaoWhatsapp.disabled = false;
+    // Espera um pouco antes de liberar de novo: o serviço bloqueia testes seguidos.
+    setTimeout(() => (botaoWhatsapp.disabled = false), 60 * 1000);
   }
 });
 
@@ -347,6 +565,7 @@ el.nova.addEventListener("click", async () => {
   await api("/api/conversa/limpar", { method: "POST", body: JSON.stringify({ conversa: conversaId }) }).catch(() => {});
   conversaId = novoId();
   guardar.escrever("jarvis.conversa", conversaId);
+  guardar.escrever("jarvis.conversa.dia", hojeLocal());
   el.conversa.replaceChildren();
   adicionarMensagem("Nova conversa iniciada. Como posso ajudar?", "jarvis");
 });

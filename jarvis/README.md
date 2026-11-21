@@ -16,6 +16,12 @@ Assistente pessoal que roda no navegador do celular e do PC. Você fala, ele res
 
 Os painéis laterais mostram os lembretes, as notas e o resumo financeiro do mês, e se atualizam sozinhos.
 
+Outros recursos:
+- **Resposta em tempo real:** o texto aparece enquanto é gerado, e a voz começa na primeira frase, sem esperar a resposta inteira.
+- **Botões rápidos** (+ Gasto/Ganho, + Nota, + Lembrete): salvam direto, sem usar a IA, e por isso não custam nada.
+- **Ajustes (⚙):** cinco temas de cor (azul, vermelho, verde, roxo e claro), escolha da voz e da velocidade da fala, e um botão para testar a voz. O círculo pulsa a cada palavra falada ou ouvida.
+- **Economia:** a conversa recomeça sozinha a cada dia, porque conversas curtas custam menos. Notas, gastos e lembretes continuam guardados. Cada pergunta faz no máximo 2 pesquisas na internet.
+
 ## Como rodar
 
 Você precisa do **Node.js 22.9 ou mais novo** e de uma **chave da API da Anthropic**. Para criar a chave, acesse console.anthropic.com, vá em *API Keys* e clique em *Create Key*.

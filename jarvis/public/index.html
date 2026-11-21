@@ -10,6 +10,10 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700&family=Rajdhani:wght@400;500;600&display=swap" />
   <link rel="stylesheet" href="estilo.css" />
+  <script>
+    // Aplica o tema salvo antes de desenhar a página (evita piscar com a cor errada).
+    try { document.documentElement.dataset.tema = localStorage.getItem("jarvis.tema") || "azul"; } catch {}
+  </script>
 </head>
 <body>
   <div class="grade"></div>
@@ -25,18 +29,21 @@
         <input type="checkbox" id="vozLigada" checked /> <span>Voz</span>
       </label>
       <button class="botao-sec" id="novaConversa" title="Começar uma nova conversa">Nova conversa</button>
+      <button class="botao-sec icone" id="botaoAjustes" title="Tema e voz" aria-label="Tema e voz">⚙</button>
     </div>
   </header>
 
   <main>
     <section class="painel" id="painelLembretes">
-      <h2>Agenda · hoje e amanhã</h2>
+      <div class="titulo"><h2>Agenda · hoje e amanhã</h2></div>
       <ul id="listaAgenda" class="lista"></ul>
-      <button class="botao-sec botao-google" id="botaoGoogle" hidden>Conectar Google Agenda</button>
-      <h2>Lembretes</h2>
+      <button class="botao-sec botao-largo" id="botaoGoogle" hidden>Conectar Google Agenda</button>
+
+      <div class="titulo"><h2>Lembretes</h2><button class="mais" data-rapido="lembrete">+ Lembrete</button></div>
       <ul id="listaLembretes" class="lista"></ul>
-      <button class="botao-sec botao-google" id="botaoWhatsapp" hidden>Testar aviso no WhatsApp</button>
-      <h2>Notas</h2>
+      <button class="botao-sec botao-largo" id="botaoWhatsapp" hidden>Testar aviso no WhatsApp</button>
+
+      <div class="titulo"><h2>Notas</h2><button class="mais" data-rapido="nota">+ Nota</button></div>
       <ul id="listaNotas" class="lista"></ul>
     </section>
 
@@ -56,17 +63,49 @@
     </section>
 
     <section class="painel" id="painelFinancas">
-      <h2>Finanças do mês</h2>
+      <div class="titulo"><h2>Finanças do mês</h2><button class="mais" data-rapido="transacao">+ Gasto/Ganho</button></div>
       <div class="kpis">
         <div class="kpi"><span>Entradas</span><strong id="kEntradas">R$ 0,00</strong></div>
         <div class="kpi"><span>Saídas</span><strong id="kSaidas">R$ 0,00</strong></div>
         <div class="kpi saldo"><span>Saldo</span><strong id="kSaldo">R$ 0,00</strong></div>
       </div>
       <div id="categorias" class="categorias"></div>
-      <h2>Últimas transações</h2>
+      <div class="titulo"><h2>Últimas transações</h2></div>
       <ul id="listaTransacoes" class="lista"></ul>
     </section>
   </main>
+
+  <!-- Cadastro rápido: salva direto, sem usar a IA -->
+  <dialog id="dialogoRapido">
+    <form method="dialog" id="formRapido">
+      <h3 id="tituloRapido">Adicionar</h3>
+      <div class="campos" id="camposRapido"></div>
+      <p class="erro-form" id="erroRapido"></p>
+      <div class="acoes">
+        <button type="button" class="botao-sec" id="cancelarRapido">Cancelar</button>
+        <button type="submit" class="botao" id="salvarRapido">Salvar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Ajustes: tema e voz -->
+  <dialog id="dialogoAjustes">
+    <form method="dialog">
+      <h3>Ajustes</h3>
+      <div class="campos">
+        <label><span>Tema</span></label>
+        <div class="temas" id="temas"></div>
+        <label><span>Voz</span>
+          <select id="escolhaVoz"><option value="">Automática</option></select>
+        </label>
+        <label><span>Velocidade da fala: <b id="valorVelocidade">1,05×</b></span>
+          <input type="range" id="velocidade" min="0.8" max="1.5" step="0.05" value="1.05" />
+        </label>
+        <button type="button" class="botao-sec" id="testarVoz">▶ Testar voz</button>
+      </div>
+      <div class="acoes"><button class="botao">Pronto</button></div>
+    </form>
+  </dialog>
 
   <script src="app.js"></script>
 </body>
