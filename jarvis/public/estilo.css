@@ -283,3 +283,10 @@ dialog h3 { font-family: "Orbitron", sans-serif; font-size: 15px; letter-spacing
 @media (prefers-reduced-motion: reduce) {
   .anel, .nucleo { animation: none !important; }
 }
+
+/* Textos de leitura numa fonte em que o "a" não parece "o" (a Rajdhani fica só nos botões e rótulos). */
+.msg, .lista li, .entrada input, dialog input, dialog select, dialog textarea, .nota-pc, .estado {
+  font-family: "Exo 2", system-ui, sans-serif;
+  font-size: 15px;
+}
+.lista li small { font-size: 12px; }
