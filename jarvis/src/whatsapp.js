@@ -21,7 +21,11 @@ export class WhatsApp {
     const resp = await this.fetch(`${API}?${params}`);
     const corpo = await resp.text().catch(() => "");
     // O CallMeBot às vezes responde 200 com a mensagem de erro no texto.
-    if (!resp.ok || /error|invalid|not allowed|apikey/i.test(corpo) && !/queued|sent/i.test(corpo)) {
+    const sucesso = /queued|sent|enviad/i.test(corpo);
+    if (!resp.ok || (!sucesso && /error|invalid|not allowed|apikey/i.test(corpo))) {
+      // Guarda a resposta no log (sem a apikey) para descobrir o motivo.
+      const texto = corpo.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").split(this.apikey).join("***").slice(0, 400);
+      console.error(`CallMeBot recusou (HTTP ${resp.status}): ${texto}`);
       throw new Error(`O WhatsApp recusou a mensagem (${resp.status}).`);
     }
     return { enviado: true };
