@@ -764,3 +764,59 @@ test("Toledo: usa o fetch padrão sem perder o 'this' (erro Illegal invocation n
     globalThis.fetch = original;
   }
 });
+
+// ---------- Foto de nota fiscal ----------
+import { registrarNotaFiscal, validarImagem } from "../src/notaFiscal.js";
+
+function clienteVisao(dados) {
+  const pedidos = [];
+  return {
+    pedidos,
+    messages: { async create(p) { pedidos.push(p); return { stop_reason: "tool_use", content: [{ type: "tool_use", id: "n1", name: "dados_da_nota", input: dados }] }; } },
+  };
+}
+const FOTO = { imagem: Buffer.from("foto falsa").toString("base64"), tipo: "image/jpeg" };
+
+test("nota fiscal: lê a foto e registra o gasto com loja, categoria e data", async () => {
+  const banco = novoBanco();
+  const cliente = clienteVisao({ legivel: true, valor_total: 87.459, estabelecimento: "Drogaria Araujo", categoria: "saúde", data: "2026-11-20", resumo_itens: "remédios e higiene" });
+  const r = await registrarNotaFiscal(cliente, banco, FOTO, new Date("2026-11-22T12:00:00Z"));
+  assert.match(r.texto, /Anotei o gasto de R\$\s?87,46 em Drogaria Araujo no dia 20\/11, na categoria saúde\./);
+  assert.deepEqual(
+    { tipo: r.transacao.tipo, valor: r.transacao.valor, categoria: r.transacao.categoria, data: r.transacao.data, descricao: r.transacao.descricao },
+    { tipo: "saida", valor: 87.46, categoria: "saúde", data: "2026-11-20", descricao: "Drogaria Araujo - remédios e higiene" },
+  );
+  const p = cliente.pedidos[0];
+  assert.deepEqual(p.tool_choice, { type: "tool", name: "dados_da_nota" });
+  assert.equal(p.messages[0].content[0].source.media_type, "image/jpeg");
+  assert.equal(p.tools[0].strict, true);
+});
+
+test("nota fiscal: foto ilegível não registra; data estranha vira hoje; formato inválido é recusado", async () => {
+  const banco = novoBanco();
+  const ilegivel = await registrarNotaFiscal(clienteVisao({ legivel: false, valor_total: 0, estabelecimento: "", categoria: "outros", data: "", resumo_itens: "" }), banco, FOTO);
+  assert.equal(ilegivel.transacao, null);
+  assert.match(ilegivel.texto, /Não consegui ler/);
+  assert.equal((await banco.listarTransacoes()).length, 0);
+
+  const futura = await registrarNotaFiscal(clienteVisao({ legivel: true, valor_total: 10, estabelecimento: "", categoria: "inventada", data: "2030-01-01", resumo_itens: "" }), banco, FOTO, new Date("2026-11-22T12:00:00Z"));
+  assert.equal(futura.transacao.data, "2026-11-22");
+  assert.equal(futura.transacao.categoria, "outros");
+
+  assert.throws(() => validarImagem({ imagem: "abc", tipo: "image/gif" }), /JPG, PNG ou WEBP/);
+  assert.throws(() => validarImagem({ imagem: "<script>", tipo: "image/jpeg" }), /defeito/);
+});
+
+test("rotas: foto de nota e desfazer o gasto", async () => {
+  const armazem = new ArmazemBlobs(blobsFalso());
+  const cliente = clienteVisao({ legivel: true, valor_total: 25, estabelecimento: "Padaria", categoria: "alimentação", data: "", resumo_itens: "pão" });
+  const tratar = criarJarvis(armazem, { senha: "" });
+  // O cliente da IA é o mesmo do cérebro; nos testes, troca pelo simulado.
+  const tratarComCliente = criarJarvis(armazem, { senha: "", cliente });
+  const post = (t, c, corpo) => t(new Request(`http://x${c}`, { method: "POST", body: JSON.stringify(corpo) }));
+  assert.equal((await post(tratar, "/api/nota-fiscal", { imagem: "x", tipo: "image/gif" })).status, 400);
+  const r = await (await post(tratarComCliente, "/api/nota-fiscal", FOTO)).json();
+  assert.equal(r.transacao.valor, 25);
+  assert.deepEqual(await (await post(tratar, "/api/transacoes/apagar", { id: r.transacao.id })).json(), { apagada: true });
+  assert.equal((await new Banco(armazem).listarTransacoes()).length, 0);
+});
