@@ -791,3 +791,36 @@ $("fotoNota").addEventListener("change", async (e) => {
     if (el.escuta.checked) comecarAOuvir();
   }
 });
+
+// ---------- Telegram (conversar pelo Telegram e pelo Android Auto) ----------
+async function atualizarTelegram() {
+  const status = $("statusTelegram");
+  try {
+    const t = await api("/api/telegram/status");
+    $("conectarTelegram").hidden = !t.configurado;
+    status.textContent = !t.configurado
+      ? "Ainda não configurado: falta colocar o TELEGRAM_BOT_TOKEN no Cloudflare."
+      : t.conectado
+        ? `🟢 Conectado${t.bot ? ` ao @${t.bot}` : ""}. Fale com o Jarvis pelo Telegram, inclusive no carro.`
+        : "Toque em Conectar Telegram e depois em Abrir o Telegram.";
+    $("conectarTelegram").textContent = t.conectado ? "Conectar de novo" : "Conectar Telegram";
+  } catch (erro) {
+    status.textContent = erro.message;
+  }
+}
+$("conectarTelegram").addEventListener("click", async () => {
+  const botao = $("conectarTelegram");
+  botao.disabled = true;
+  try {
+    const r = await api("/api/telegram/conectar", { method: "POST", body: "{}" });
+    const abrir = $("abrirTelegram");
+    abrir.href = r.link;
+    abrir.hidden = false;
+    $("statusTelegram").textContent = `Agora toque em "Abrir o Telegram" e depois em COMEÇAR (Start) na conversa com @${r.bot}. O código vale 15 minutos.`;
+  } catch (erro) {
+    $("statusTelegram").textContent = erro.message;
+  } finally {
+    botao.disabled = false;
+  }
+});
+$("botaoAjustes").addEventListener("click", atualizarTelegram);

@@ -12,6 +12,7 @@ import { Computador } from "./computador.js";
 import { enviarRelatorioMensal, enviarResumoDiario, montarResumo } from "./resumo.js";
 import { Clima } from "./clima.js";
 import { registrarNotaFiscal } from "./notaFiscal.js";
+import { Telegram } from "./telegram.js";
 import { Toledo } from "./toledo.js";
 
 const json = (dados, status = 200) => Response.json(dados, { status });
@@ -50,7 +51,7 @@ export function explicarErro(erro) {
   return { mensagem: "Tive um problema para pensar agora. Tente de novo em instantes." };
 }
 
-export function criarJarvis(armazem, { senha = process.env.JARVIS_SENHA || "", cliente = null, computadorOpcoes = {} } = {}) {
+export function criarJarvis(armazem, { senha = process.env.JARVIS_SENHA || "", cliente = null, computadorOpcoes = {}, telegramOpcoes = {} } = {}) {
   definirFuso();
   const banco = new Banco(armazem);
   const agenda = new GoogleAgenda(armazem);
@@ -58,6 +59,7 @@ export function criarJarvis(armazem, { senha = process.env.JARVIS_SENHA || "", c
   const computador = new Computador(armazem, computadorOpcoes);
   const toledo = new Toledo();
   const clima = new Clima(armazem);
+  const telegram = new Telegram(armazem, telegramOpcoes);
   const cerebro = new Cerebro(criarFerramentas(banco, agenda, whatsapp, computador, toledo, clima), banco);
   if (cliente) cerebro.cliente = cliente; // só nos testes
 
@@ -181,6 +183,35 @@ export function criarJarvis(armazem, { senha = process.env.JARVIS_SENHA || "", c
       }
     }
 
+    // Mensagens do robô do Telegram: protegidas pela senha que o próprio Telegram manda no cabeçalho.
+    if (rota === "POST /api/telegram/webhook") {
+      if (!telegram.confereSegredo(req.headers.get("x-telegram-bot-api-secret-token"))) return json({ erro: "não autorizado" }, 401);
+      const atualizacao = await corpo(req);
+      // Erros da IA viram mensagens claras no Telegram (crédito acabou, serviço ocupado...).
+      const comAviso = (fn) => async (...args) => {
+        try {
+          return await fn(...args);
+        } catch (erro) {
+          if (erro instanceof Anthropic.APIError || !(erro instanceof Error)) {
+            console.error(erro);
+            const { mensagem, credito } = explicarErro(erro);
+            if (credito) await avisarCreditoNoWhatsApp(mensagem);
+            erro.mensagemParaUsuario = mensagem;
+          }
+          throw erro;
+        }
+      };
+      try {
+        await telegram.processar(atualizacao, {
+          conversar: comAviso((conversa, texto) => cerebro.conversar(conversa, texto.slice(0, 4000), null, { aparelho: "celular" })),
+          notaFiscal: comAviso((foto) => registrarNotaFiscal(cerebro.cliente, banco, foto)),
+        });
+      } catch (erro) {
+        console.error("Telegram:", erro); // responde 200 mesmo assim, para o Telegram não repetir
+      }
+      return json({ ok: true });
+    }
+
     // O programa do PC não usa a senha do Jarvis: cada pedido vem assinado com a chave do PC.
     if (rota === "GET /api/pc/esperar") {
       try {
@@ -264,6 +295,17 @@ export function criarJarvis(armazem, { senha = process.env.JARVIS_SENHA || "", c
           return json({ conectado: await agenda.conectado(), eventos: [], erro: erro.message });
         }
       }
+      case "GET /api/telegram/status":
+        return json(await telegram.estado());
+      case "POST /api/telegram/conectar":
+        try {
+          return json(await telegram.conectar(url.origin));
+        } catch (erro) {
+          return json({ erro: erro.message }, 400);
+        }
+      case "POST /api/telegram/desconectar":
+        await telegram.desconectar();
+        return json({ ok: true });
       case "GET /api/whatsapp/status":
         return json({ configurado: whatsapp.configurado });
       case "POST /api/whatsapp/teste":
