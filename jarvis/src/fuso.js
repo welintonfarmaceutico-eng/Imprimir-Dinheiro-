@@ -4,7 +4,7 @@
 export const fuso = () => process.env.JARVIS_FUSO || "America/Sao_Paulo";
 
 const formatos = new Map();
-function partes(d, tz = fuso()) {
+export function partes(d, tz = fuso()) {
   let f = formatos.get(tz);
   if (!f) {
     f = new Intl.DateTimeFormat("en-US", {
@@ -66,3 +66,30 @@ export function lerData(valor) {
 
 // Formatação em português, sempre no fuso do usuário.
 export const formatar = (d, opcoes) => new Date(d).toLocaleString("pt-BR", { timeZone: fuso(), ...opcoes });
+
+// ---------- Lembretes que se repetem ----------
+export const REPETICOES = ["diario", "dias_uteis", "semanal", "mensal"];
+const diasNoMes = (ano, mes) => new Date(Date.UTC(ano, mes, 0)).getUTCDate();
+const diaDaSemana = (ano, mes, dia) => new Date(Date.UTC(ano, mes - 1, dia)).getUTCDay(); // 0 = domingo
+
+// Próxima vez (depois de "agora") de um lembrete que se repete, no mesmo horário local.
+export function proximaRepeticao(quando, repetir, agora = new Date()) {
+  const base = partes(new Date(quando));
+  let { ano, mes, dia } = base;
+  const diaOriginal = base.dia;
+  for (let i = 0; i < 1000; i++) {
+    if (repetir === "mensal") {
+      mes += 1;
+      if (mes > 12) { mes = 1; ano += 1; }
+      dia = Math.min(diaOriginal, diasNoMes(ano, mes)); // dia 31 vira o último dia do mês
+    } else {
+      const passo = repetir === "semanal" ? 7 : 1;
+      const d = new Date(Date.UTC(ano, mes - 1, dia + passo));
+      ano = d.getUTCFullYear(); mes = d.getUTCMonth() + 1; dia = d.getUTCDate();
+      if (repetir === "dias_uteis" && [0, 6].includes(diaDaSemana(ano, mes, dia))) continue;
+    }
+    const proxima = instanteLocal(ano, mes, dia, base.hora, base.minuto);
+    if (proxima > agora) return proxima;
+  }
+  throw new Error("Não consegui calcular a próxima repetição.");
+}

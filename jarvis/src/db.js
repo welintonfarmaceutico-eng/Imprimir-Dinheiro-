@@ -1,7 +1,7 @@
 // Regras de notas, lembretes e finanças, sobre qualquer armazém (arquivo ou Netlify Blobs).
 import crypto from "node:crypto";
 
-import { hojeLocal, lerData } from "./fuso.js";
+import { REPETICOES, hojeLocal, lerData, proximaRepeticao } from "./fuso.js";
 
 export { hojeLocal }; // data local (no fuso do usuário) no formato AAAA-MM-DD
 
@@ -33,10 +33,11 @@ export class Banco {
   }
 
   // ---------- Lembretes ----------
-  async adicionarLembrete(texto, quando) {
+  async adicionarLembrete(texto, quando, repetir = "") {
     const data = lerData(quando);
     if (Number.isNaN(data.getTime())) throw new Error(`Data inválida: ${quando}`);
     const lembrete = { id: this.novoId(), texto, quando: data.toISOString(), concluido: false, avisado: false };
+    if (REPETICOES.includes(repetir)) lembrete.repetir = repetir;
     await this.armazem.salvar("lembretes", lembrete.id, lembrete);
     return lembrete;
   }
@@ -62,6 +63,18 @@ export class Banco {
     );
     await Promise.all(vencidos.map((l) => this.armazem.salvar("lembretes", l.id, { ...l, avisado: true })));
     return vencidos;
+  }
+
+  // Lembretes que se repetem: 5 minutos depois do horário (já avisados), passam para a próxima vez.
+  async avancarRepetidos(agora = new Date()) {
+    const repetidos = (await this.armazem.listar("lembretes")).filter(
+      (l) => l.repetir && !l.concluido && agora - new Date(l.quando) >= 5 * 60 * 1000,
+    );
+    for (const l of repetidos) {
+      const quando = proximaRepeticao(l.quando, l.repetir, agora).toISOString();
+      await this.armazem.salvar("lembretes", l.id, { ...l, quando, avisado: false });
+    }
+    return repetidos.length;
   }
 
   // ---------- Finanças ----------

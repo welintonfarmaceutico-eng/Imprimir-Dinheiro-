@@ -52,6 +52,8 @@ function pulsar(forca = 1.18) {
   pulsoTimer = setTimeout(() => el.reator.style.setProperty("--pulso", "1"), 140);
 }
 
+const REPETE = { diario: "todo dia", dias_uteis: "seg a sex", semanal: "toda semana", mensal: "todo mês" };
+
 // Celular ou computador: o Jarvis escolhe entre mostrar um botão (celular) ou abrir direto no PC.
 const APARELHO = /Android|iPhone|iPad|Mobi/i.test(navigator.userAgent) ? "celular" : "computador";
 
@@ -391,7 +393,7 @@ const dataHora = (iso) => new Date(iso).toLocaleString("pt-BR", { weekday: "shor
 async function atualizarPaineis() {
   try {
     const p = await api("/api/painel");
-    preencherLista($("listaLembretes"), p.lembretes, (l) => li(l.texto, dataHora(l.quando)), 'Nenhum lembrete. Ex.: "me lembre de pagar a conta amanhã às 9h".');
+    preencherLista($("listaLembretes"), p.lembretes, (l) => li(l.texto, dataHora(l.quando) + (REPETE[l.repetir] ? ` · 🔁 ${REPETE[l.repetir]}` : "")), 'Nenhum lembrete. Ex.: "me lembre de pagar a conta amanhã às 9h".');
     preencherLista($("listaNotas"), p.notas, (n) => li(n.texto, dataHora(n.criadaEm)), 'Nenhuma nota. Ex.: "anota que a senha do wi-fi é..."');
     preencherLista($("listaTransacoes"), p.transacoes, (t) => {
       const item = document.createElement("li");
@@ -480,9 +482,14 @@ function abrirRapido(tipo) {
     daquiUmaHora.setMinutes(0, 0, 0);
     const p = (n) => String(n).padStart(2, "0");
     quando.value = `${daquiUmaHora.getFullYear()}-${p(daquiUmaHora.getMonth() + 1)}-${p(daquiUmaHora.getDate())}T${p(daquiUmaHora.getHours())}:00`;
+    const repetir = criar("select", { name: "repetir" });
+    for (const [valor, nome] of [["", "Não repetir"], ["diario", "Todo dia"], ["dias_uteis", "De segunda a sexta"], ["semanal", "Toda semana"], ["mensal", "Todo mês"]]) {
+      repetir.append(criar("option", { value: valor, textContent: nome }));
+    }
     rapido.campos.append(
       campo("O que lembrar", criar("input", { name: "texto", required: true, autocomplete: "off" })),
       campo("Quando", quando),
+      campo("Repetir", repetir),
     );
   }
   rapido.dialogo.showModal();
