@@ -40,6 +40,13 @@ export class Telegram {
     return dados.result;
   }
 
+  // Canal de avisos (lembretes, resumo, relatório), no mesmo formato do WhatsApp.
+  // No carro, é só responder por voz a essas mensagens para falar com o Jarvis.
+  async canal() {
+    const chatId = (await this.armazem.obter("config", "telegram"))?.chatId;
+    return { nome: "telegram", configurado: Boolean(this.configurado && chatId), enviar: (texto) => this.enviar(chatId, texto) };
+  }
+
   async estado() {
     const conf = await this.armazem.obter("config", "telegram");
     return { configurado: this.configurado, conectado: Boolean(conf?.chatId), bot: conf?.bot || null };
