@@ -41,10 +41,11 @@ export async function enviarLembretesVencidos(banco, armazem, whatsapp, agora = 
   for (const l of lembretes) {
     const quando = new Date(l.quando);
     if (quando > agora || agora - quando > JANELA_MS) continue;
-    if (await armazem.obter("whatsapp-enviados", l.id)) continue;
+    const chave = `${l.id}-${quando.getTime()}`; // lembrete que se repete: cada vez é um envio
+    if (await armazem.obter("whatsapp-enviados", chave)) continue;
     try {
       await whatsapp.enviar(`⏰ Lembrete do Jarvis: ${l.texto}`);
-      await armazem.salvar("whatsapp-enviados", l.id, { em: agora.toISOString() });
+      await armazem.salvar("whatsapp-enviados", chave, { em: agora.toISOString() });
       enviados++;
     } catch (erro) {
       console.error(`Lembrete ${l.id}:`, erro.message); // tenta de novo no próximo minuto

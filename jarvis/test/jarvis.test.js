@@ -605,6 +605,102 @@ test("cérebro: botão de abrir app chega junto com a resposta e o aparelho vai 
   assert.match(cerebro.cliente.pedidos[0].messages[0].content, /\[Aparelho: celular\]\ntoca Legião Urbana$/);
 });
 
+// ---------- Lembretes que se repetem ----------
+import { proximaRepeticao } from "../src/fuso.js";
+
+test("repetição: próxima vez no mesmo horário de Brasília", () => {
+  const sexta8h = "2026-11-20T11:00:00.000Z"; // sexta, 8h em Brasília
+  const agora = new Date("2026-11-20T11:10:00Z");
+  assert.equal(proximaRepeticao(sexta8h, "diario", agora).toISOString(), "2026-11-21T11:00:00.000Z");
+  assert.equal(proximaRepeticao(sexta8h, "dias_uteis", agora).toISOString(), "2026-11-23T11:00:00.000Z"); // pula o fim de semana
+  assert.equal(proximaRepeticao(sexta8h, "semanal", agora).toISOString(), "2026-11-27T11:00:00.000Z");
+  assert.equal(proximaRepeticao("2027-01-31T12:00:00.000Z", "mensal", new Date("2027-01-31T13:00:00Z")).toISOString(), "2027-02-28T12:00:00.000Z"); // dia 31 vira 28
+  // Servidor parado vários dias: pula direto para a próxima vez no futuro.
+  assert.equal(proximaRepeticao(sexta8h, "diario", new Date("2026-11-25T15:00:00Z")).toISOString(), "2026-11-26T11:00:00.000Z");
+});
+
+test("repetição: avisa no WhatsApp a cada vez e passa para o próximo dia", async () => {
+  const armazem = new ArmazemBlobs(blobsFalso());
+  const banco = new Banco(armazem);
+  const cb = callmebotFalso();
+  const zap = new WhatsApp({ fetch: cb.f, env: { WHATSAPP_TELEFONE: "+55", WHATSAPP_APIKEY: "1" } });
+  const l = await banco.adicionarLembrete("tomar o remédio", "2026-11-21T11:00:00Z", "diario");
+  assert.equal(l.repetir, "diario");
+  assert.equal((await banco.adicionarLembrete("uma vez", "2026-11-21T11:00:00Z", "nao")).repetir, undefined);
+
+  await enviarLembretesVencidos(banco, armazem, zap, new Date("2026-11-21T11:01:00Z"));
+  assert.equal(await banco.avancarRepetidos(new Date("2026-11-21T11:02:00Z")), 0, "espera 5 minutos antes de passar para a próxima");
+  assert.equal(await banco.avancarRepetidos(new Date("2026-11-21T11:06:00Z")), 1);
+  const depois = (await banco.listarLembretes()).find((x) => x.id === l.id);
+  assert.equal(depois.quando, "2026-11-22T11:00:00.000Z");
+  assert.equal(depois.avisado, false);
+
+  await enviarLembretesVencidos(banco, armazem, zap, new Date("2026-11-22T11:01:00Z"));
+  assert.equal(cb.enviados.filter((e) => e.texto.includes("remédio")).length, 2, "um aviso por dia");
+  await banco.concluirLembrete(l.id);
+  assert.equal(await banco.avancarRepetidos(new Date("2026-11-23T12:00:00Z")), 0, "concluído para de repetir");
+});
+
+// ---------- Previsão do tempo e relatório do mês ----------
+import { Clima, textoPrevisao } from "../src/clima.js";
+import { enviarRelatorioMensal, montarRelatorioMensal } from "../src/resumo.js";
+
+function openMeteoFalso() {
+  const urls = [];
+  const f = async (url) => {
+    urls.push(url);
+    if (url.includes("geocoding")) {
+      return Response.json({ results: [
+        { name: "Montes Claros", admin1: "Goiás", country: "Brasil", latitude: -16.1, longitude: -51.4 },
+        { name: "Montes Claros", admin1: "Minas Gerais", country: "Brasil", latitude: -16.73, longitude: -43.86 },
+      ] });
+    }
+    return Response.json({ daily: { time: ["2026-11-22", "2026-11-23"], temperature_2m_max: [31.4, 29], temperature_2m_min: [19.2, 18], precipitation_probability_max: [40, 10], weather_code: [2, 61] } });
+  };
+  return { f, urls };
+}
+
+test("clima: guarda a cidade certa e monta a previsão do resumo", async () => {
+  const armazem = new ArmazemBlobs(blobsFalso());
+  const om = openMeteoFalso();
+  const clima = new Clima(armazem, { fetch: om.f });
+  assert.equal(await clima.previsaoDeHoje(), null, "sem cidade, sem previsão");
+  const cidade = await clima.definirCidade("Montes Claros, MG");
+  assert.equal(cidade.estado, "Minas Gerais");
+  const p = await clima.previsaoDeHoje(new Date("2026-11-22T10:00:00Z"));
+  assert.equal(textoPrevisao(p), "🌤️ Tempo em Montes Claros: poucas nuvens, máxima de 31° e mínima de 19°, 40% de chance de chuva.");
+  assert.match(om.urls.at(-1), /latitude=-16\.73.*timezone=America%2FSao_Paulo/);
+
+  const banco = new Banco(armazem);
+  const texto = await montarResumo(banco, null, new Date("2026-11-22T10:00:00Z"), null, clima);
+  assert.match(texto, /Tempo em Montes Claros/);
+  const semCidade = await montarResumo(banco, null, new Date(), null, new Clima(new ArmazemBlobs(blobsFalso()), { fetch: om.f }));
+  assert.match(semCidade, /minha cidade é/);
+});
+
+test("relatório mensal: sai no dia 1º com o mês anterior, uma vez só", async () => {
+  const armazem = new ArmazemBlobs(blobsFalso());
+  const banco = new Banco(armazem);
+  const cb = callmebotFalso();
+  const zap = new WhatsApp({ fetch: cb.f, env: { WHATSAPP_TELEFONE: "+55", WHATSAPP_APIKEY: "1" } });
+  await banco.adicionarTransacao({ tipo: "saida", valor: 100, categoria: "mercado", data: "2026-10-10" });
+  await banco.adicionarTransacao({ tipo: "entrada", valor: 3000, categoria: "salário", data: "2026-11-05" });
+  await banco.adicionarTransacao({ tipo: "saida", valor: 150, categoria: "mercado", data: "2026-11-10" });
+  await banco.adicionarTransacao({ tipo: "saida", valor: 50, categoria: "farmácia", data: "2026-11-12" });
+
+  const texto = await montarRelatorioMensal(banco, "2026-11");
+  assert.match(texto, /Relatório de novembro/);
+  assert.match(texto, /Saldo: R\$\s?2\.800,00 ✅/);
+  assert.match(texto, /• mercado: R\$\s?150,00\n• farmácia/);
+  assert.match(texto, /Você gastou 100% a mais que em outubro/);
+
+  assert.deepEqual(await enviarRelatorioMensal(banco, armazem, zap, new Date("2026-11-30T10:00:00Z"), 7), { enviado: false }, "não é dia 1º");
+  assert.deepEqual(await enviarRelatorioMensal(banco, armazem, zap, new Date("2026-12-01T10:00:00Z"), 7), { enviado: true });
+  assert.deepEqual(await enviarRelatorioMensal(banco, armazem, zap, new Date("2026-12-01T10:30:00Z"), 7), { enviado: false });
+  assert.equal(cb.enviados.length, 1);
+  assert.match(await montarRelatorioMensal(banco, "2026-09"), /nenhuma entrada ou gasto/);
+});
+
 // ---------- Sistema Toledo (somente leitura) ----------
 import { Toledo } from "../src/toledo.js";
 

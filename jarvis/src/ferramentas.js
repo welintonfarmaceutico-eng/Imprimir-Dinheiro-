@@ -10,7 +10,7 @@ const obj = (properties) => ({
   additionalProperties: false,
 });
 
-export function criarFerramentas(banco, agenda = null, whatsapp = null, computador = null, toledo = null) {
+export function criarFerramentas(banco, agenda = null, whatsapp = null, computador = null, toledo = null, clima = null) {
   const ferramentas = [
     // ---------- Notas ----------
     {
@@ -43,17 +43,23 @@ export function criarFerramentas(banco, agenda = null, whatsapp = null, computad
       definicao: {
         name: "criar_lembrete",
         description:
-          "Cria um lembrete que será avisado em voz alta na data e hora indicadas. " +
-          "Calcule a data a partir do horário atual informado na mensagem do usuário.",
+          "Cria um lembrete que será avisado em voz alta (e no WhatsApp) na data e hora indicadas. " +
+          "Calcule a data a partir do horário atual informado na mensagem do usuário. " +
+          "Para lembretes que se repetem (\"todo dia\", \"de segunda a sexta\", \"toda segunda\", \"todo dia 10\"), use repetir e coloque em quando a PRIMEIRA vez.",
         input_schema: obj({
           texto: { type: "string", description: "O que lembrar" },
           quando: {
             type: "string",
             description: "Data e hora no formato ISO 8601 com fuso, ex.: 2026-11-21T15:30:00-03:00",
           },
+          repetir: {
+            type: "string",
+            enum: ["nao", "diario", "dias_uteis", "semanal", "mensal"],
+            description: "nao = uma vez só; diario = todo dia; dias_uteis = segunda a sexta; semanal = toda semana no mesmo dia; mensal = todo mês no mesmo dia",
+          },
         }),
       },
-      executar: ({ texto, quando }) => banco.adicionarLembrete(texto, quando),
+      executar: ({ texto, quando, repetir }) => banco.adicionarLembrete(texto, quando, repetir),
     },
     {
       definicao: {
@@ -66,7 +72,7 @@ export function criarFerramentas(banco, agenda = null, whatsapp = null, computad
     {
       definicao: {
         name: "concluir_lembrete",
-        description: "Marca um lembrete como concluído pelo id.",
+        description: "Marca um lembrete como concluído pelo id. Num lembrete que se repete, isso para de repetir.",
         input_schema: obj({ id: { type: "string" } }),
       },
       executar: async ({ id }) => ({ concluido: await banco.concluirLembrete(id) }),
@@ -190,6 +196,18 @@ export function criarFerramentas(banco, agenda = null, whatsapp = null, computad
         }),
       },
       executar: ({ acao, alvo }) => computador.executar(acao, alvo),
+    });
+  }
+
+  // ---------- Cidade (previsão do tempo no resumo diário) ----------
+  if (clima) {
+    ferramentas.push({
+      definicao: {
+        name: "definir_cidade",
+        description: "Guarda a cidade do usuário para a previsão do tempo no resumo diário do WhatsApp. Use quando ele disser onde mora. Formato: \"Cidade, UF\", ex.: \"Montes Claros, MG\".",
+        input_schema: obj({ cidade: { type: "string" } }),
+      },
+      executar: ({ cidade }) => clima.definirCidade(cidade),
     });
   }
 

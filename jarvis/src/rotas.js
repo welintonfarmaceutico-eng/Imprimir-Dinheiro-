@@ -9,7 +9,8 @@ import { Cerebro } from "./cerebro.js";
 import { GoogleAgenda } from "./google.js";
 import { WhatsApp, enviarLembretesVencidos } from "./whatsapp.js";
 import { Computador } from "./computador.js";
-import { enviarResumoDiario, montarResumo } from "./resumo.js";
+import { enviarRelatorioMensal, enviarResumoDiario, montarResumo } from "./resumo.js";
+import { Clima } from "./clima.js";
 import { Toledo } from "./toledo.js";
 
 const json = (dados, status = 200) => Response.json(dados, { status });
@@ -55,7 +56,8 @@ export function criarJarvis(armazem, { senha = process.env.JARVIS_SENHA || "", c
   const whatsapp = new WhatsApp();
   const computador = new Computador(armazem, computadorOpcoes);
   const toledo = new Toledo();
-  const cerebro = new Cerebro(criarFerramentas(banco, agenda, whatsapp, computador, toledo), banco);
+  const clima = new Clima(armazem);
+  const cerebro = new Cerebro(criarFerramentas(banco, agenda, whatsapp, computador, toledo, clima), banco);
   if (cliente) cerebro.cliente = cliente; // só nos testes
 
   function autorizado(req) {
@@ -131,7 +133,7 @@ export function criarJarvis(armazem, { senha = process.env.JARVIS_SENHA || "", c
       }
       if (rota === "POST /api/lembretes") {
         if (typeof dados.texto !== "string" || !dados.texto.trim()) throw new Error("Escreva o lembrete.");
-        return json(await banco.adicionarLembrete(dados.texto.trim().slice(0, 500), dados.quando));
+        return json(await banco.adicionarLembrete(dados.texto.trim().slice(0, 500), dados.quando, dados.repetir));
       }
     } catch (erro) {
       return json({ erro: erro.message }, 400);
@@ -249,7 +251,7 @@ export function criarJarvis(armazem, { senha = process.env.JARVIS_SENHA || "", c
       case "POST /api/whatsapp/teste":
         try {
           // O teste manda o próprio resumo do dia: serve de teste e de resumo na hora.
-          return json(await whatsapp.enviar(await montarResumo(banco, agenda, new Date(), toledo)));
+          return json(await whatsapp.enviar(await montarResumo(banco, agenda, new Date(), toledo, clima)));
         } catch (erro) {
           return json({ erro: erro.message }, 400);
         }
@@ -283,6 +285,8 @@ export async function verificarLembretesWhatsApp(armazem) {
   const banco = new Banco(armazem);
   const whatsapp = new WhatsApp();
   const resultado = await enviarLembretesVencidos(banco, armazem, whatsapp);
-  const resumo = await enviarResumoDiario(banco, armazem, whatsapp, new GoogleAgenda(armazem), new Date(), undefined, new Toledo());
-  return { ...resultado, resumo: resumo.enviado };
+  await banco.avancarRepetidos(); // lembretes que se repetem passam para a próxima vez
+  const resumo = await enviarResumoDiario(banco, armazem, whatsapp, new GoogleAgenda(armazem), new Date(), undefined, new Toledo(), new Clima(armazem));
+  const relatorio = await enviarRelatorioMensal(banco, armazem, whatsapp);
+  return { ...resultado, resumo: resumo.enviado, relatorio: relatorio.enviado };
 }
