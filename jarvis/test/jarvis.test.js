@@ -672,9 +672,9 @@ test("clima: guarda a cidade certa e monta a previsão do resumo", async () => {
   assert.match(om.urls.at(-1), /latitude=-16\.73.*timezone=America%2FSao_Paulo/);
 
   const banco = new Banco(armazem);
-  const texto = await montarResumo(banco, null, new Date("2026-11-22T10:00:00Z"), clima);
+  const texto = await montarResumo(banco, null, new Date("2026-11-22T10:00:00Z"), null, clima);
   assert.match(texto, /Tempo em Montes Claros/);
-  const semCidade = await montarResumo(banco, null, new Date(), new Clima(new ArmazemBlobs(blobsFalso()), { fetch: om.f }));
+  const semCidade = await montarResumo(banco, null, new Date(), null, new Clima(new ArmazemBlobs(blobsFalso()), { fetch: om.f }));
   assert.match(semCidade, /minha cidade é/);
 });
 
@@ -699,4 +699,68 @@ test("relatório mensal: sai no dia 1º com o mês anterior, uma vez só", async
   assert.deepEqual(await enviarRelatorioMensal(banco, armazem, zap, new Date("2026-12-01T10:30:00Z"), 7), { enviado: false });
   assert.equal(cb.enviados.length, 1);
   assert.match(await montarRelatorioMensal(banco, "2026-09"), /nenhuma entrada ou gasto/);
+});
+
+// ---------- Sistema Toledo (somente leitura) ----------
+import { Toledo } from "../src/toledo.js";
+
+const carteiraFalsa = {
+  hoje: "2026-11-22", mes: "2026-11",
+  recebidoNoMes: { total: 12500, alugueis: 2500, vendas: 10000 },
+  emAtraso: { quantidade: 1, total: 1050, itens: [{ tipo: "aluguel", nome: "Maria", imovel: "Casa 1", dias: 20, valor: 1000, totalComEncargos: 1050 }] },
+  aReceberNoMes: { quantidade: 2, total: 1820, itens: [] },
+  vencendoEm7Dias: { quantidade: 0, total: 0, itens: [] },
+  vendasDeLotes: [], imoveis: { total: 10, alugados: 5 },
+};
+const buscaFalsa = (status = 200, corpo = carteiraFalsa) => async (url, opcoes) => {
+  buscaFalsa.ultimo = { url, opcoes };
+  return { status, ok: status < 400, json: async () => corpo };
+};
+
+test("Toledo: sem TOLEDO_URL e TOLEDO_TOKEN a ferramenta não existe", () => {
+  const t = new Toledo({});
+  assert.equal(t.configurado, false);
+  const f = criarFerramentas(novoBanco(), null, null, null, t);
+  assert.equal(f.definicoes.some((d) => d.name === "consultar_carteira_toledo"), false);
+});
+
+test("Toledo: consulta manda a senha, recorta o assunto e não altera nada", async () => {
+  const t = new Toledo({ TOLEDO_URL: "https://x/f", TOLEDO_TOKEN: "segredo" }, buscaFalsa());
+  const f = criarFerramentas(novoBanco(), null, null, null, t);
+  assert.ok(f.definicoes.some((d) => d.name === "consultar_carteira_toledo"));
+  const r = await f.executar("consultar_carteira_toledo", { assunto: "atrasos" });
+  assert.equal(buscaFalsa.ultimo.opcoes.headers["x-jarvis-token"], "segredo");
+  assert.equal(r.emAtraso.quantidade, 1);
+  assert.equal(r.recebidoNoMes, undefined);
+});
+
+test("Toledo: senha recusada dá mensagem clara", async () => {
+  const t = new Toledo({ TOLEDO_URL: "https://x/f", TOLEDO_TOKEN: "errado" }, buscaFalsa(401, {}));
+  await assert.rejects(() => t.consultar("tudo"), /recusou a senha/);
+});
+
+test("Toledo: resumo diário inclui a carteira e sobrevive à falha do sistema", async () => {
+  const banco = novoBanco();
+  const bom = new Toledo({ TOLEDO_URL: "https://x/f", TOLEDO_TOKEN: "s" }, buscaFalsa());
+  const texto = await montarResumo(banco, { configurado: false }, new Date("2026-11-22T07:00:00-03:00"), bom);
+  assert.match(texto, /Carteira Toledo/);
+  assert.match(texto, /Em atraso: 1/);
+  const ruim = new Toledo({ TOLEDO_URL: "https://x/f", TOLEDO_TOKEN: "s" }, buscaFalsa(500, {}));
+  const texto2 = await montarResumo(banco, { configurado: false }, new Date("2026-11-22T07:00:00-03:00"), ruim);
+  assert.match(texto2, /não consegui consultar o sistema/);
+  assert.match(texto2, /Finanças do mês/);
+});
+
+test("Toledo: usa o fetch padrão sem perder o 'this' (erro Illegal invocation no Cloudflare)", async () => {
+  const original = globalThis.fetch;
+  globalThis.fetch = function () {
+    if (this !== undefined && this !== globalThis) throw new TypeError("Illegal invocation");
+    return Promise.resolve(new Response(JSON.stringify({ hoje: "2026-11-21", imoveis: { total: 1, alugados: 1 } }), { status: 200 }));
+  };
+  try {
+    const r = await new Toledo({ TOLEDO_URL: "https://x/f", TOLEDO_TOKEN: "s" }).consultar("ocupacao");
+    assert.equal(r.imoveis.alugados, 1);
+  } finally {
+    globalThis.fetch = original;
+  }
 });

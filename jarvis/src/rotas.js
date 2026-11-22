@@ -11,6 +11,7 @@ import { WhatsApp, enviarLembretesVencidos } from "./whatsapp.js";
 import { Computador } from "./computador.js";
 import { enviarRelatorioMensal, enviarResumoDiario, montarResumo } from "./resumo.js";
 import { Clima } from "./clima.js";
+import { Toledo } from "./toledo.js";
 
 const json = (dados, status = 200) => Response.json(dados, { status });
 const ID_VALIDO = /^[A-Za-z0-9-]{1,64}$/;
@@ -54,8 +55,9 @@ export function criarJarvis(armazem, { senha = process.env.JARVIS_SENHA || "", c
   const agenda = new GoogleAgenda(armazem);
   const whatsapp = new WhatsApp();
   const computador = new Computador(armazem, computadorOpcoes);
+  const toledo = new Toledo();
   const clima = new Clima(armazem);
-  const cerebro = new Cerebro(criarFerramentas(banco, agenda, whatsapp, computador, clima), banco);
+  const cerebro = new Cerebro(criarFerramentas(banco, agenda, whatsapp, computador, toledo, clima), banco);
   if (cliente) cerebro.cliente = cliente; // só nos testes
 
   function autorizado(req) {
@@ -249,7 +251,7 @@ export function criarJarvis(armazem, { senha = process.env.JARVIS_SENHA || "", c
       case "POST /api/whatsapp/teste":
         try {
           // O teste manda o próprio resumo do dia: serve de teste e de resumo na hora.
-          return json(await whatsapp.enviar(await montarResumo(banco, agenda, new Date(), clima)));
+          return json(await whatsapp.enviar(await montarResumo(banco, agenda, new Date(), toledo, clima)));
         } catch (erro) {
           return json({ erro: erro.message }, 400);
         }
@@ -284,7 +286,7 @@ export async function verificarLembretesWhatsApp(armazem) {
   const whatsapp = new WhatsApp();
   const resultado = await enviarLembretesVencidos(banco, armazem, whatsapp);
   await banco.avancarRepetidos(); // lembretes que se repetem passam para a próxima vez
-  const resumo = await enviarResumoDiario(banco, armazem, whatsapp, new GoogleAgenda(armazem), new Date(), undefined, new Clima(armazem));
+  const resumo = await enviarResumoDiario(banco, armazem, whatsapp, new GoogleAgenda(armazem), new Date(), undefined, new Toledo(), new Clima(armazem));
   const relatorio = await enviarRelatorioMensal(banco, armazem, whatsapp);
   return { ...resultado, resumo: resumo.enviado, relatorio: relatorio.enviado };
 }

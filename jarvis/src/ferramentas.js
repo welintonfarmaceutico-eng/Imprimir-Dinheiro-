@@ -10,7 +10,7 @@ const obj = (properties) => ({
   additionalProperties: false,
 });
 
-export function criarFerramentas(banco, agenda = null, whatsapp = null, computador = null, clima = null) {
+export function criarFerramentas(banco, agenda = null, whatsapp = null, computador = null, toledo = null, clima = null) {
   const ferramentas = [
     // ---------- Notas ----------
     {
@@ -232,6 +232,25 @@ export function criarFerramentas(banco, agenda = null, whatsapp = null, computad
     executar: (input) => ({ botao: montarLink(input), aviso: "O botão já está na tela; diga em uma frase para o usuário tocar nele." }),
   });
 
+  if (toledo?.configurado) {
+    ferramentas.push({
+      definicao: {
+        name: "consultar_carteira_toledo",
+        description:
+          "Consulta o sistema de gestão da Porto e Toledo (aluguéis e vendas de lotes), só para leitura. " +
+          "Use para perguntas como: quanto está em atraso e quem deve, o que vence esta semana, quanto entrou no mês, " +
+          "como está a venda de um lote, quantos imóveis estão alugados. Não cobra, não dá baixa e não altera nada: " +
+          "se o usuário pedir isso, diga que precisa fazer no sistema. Os valores de atraso já incluem multa de 2% e mora de 1% ao mês.",
+        input_schema: obj({
+          assunto: {
+            type: "string",
+            enum: ["tudo", "atrasos", "a_receber_mes", "vencendo_7_dias", "recebido_mes", "vendas_lotes", "ocupacao"],
+          },
+        }),
+      },
+      executar: ({ assunto }) => toledo.consultar(assunto),
+    });
+  }
   const porNome = new Map(ferramentas.map((f) => [f.definicao.name, f]));
 
   return {
