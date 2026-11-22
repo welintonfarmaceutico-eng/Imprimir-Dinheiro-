@@ -13,6 +13,7 @@ import { enviarRelatorioMensal, enviarResumoDiario, montarResumo } from "./resum
 import { Clima } from "./clima.js";
 import { registrarNotaFiscal } from "./notaFiscal.js";
 import { Telegram } from "./telegram.js";
+import { Instagram } from "./instagram.js";
 import { Toledo } from "./toledo.js";
 
 const json = (dados, status = 200) => Response.json(dados, { status });
@@ -60,7 +61,8 @@ export function criarJarvis(armazem, { senha = process.env.JARVIS_SENHA || "", c
   const toledo = new Toledo();
   const clima = new Clima(armazem);
   const telegram = new Telegram(armazem, telegramOpcoes);
-  const cerebro = new Cerebro(criarFerramentas(banco, agenda, whatsapp, computador, toledo, clima), banco);
+  const instagram = new Instagram(armazem);
+  const cerebro = new Cerebro(criarFerramentas(banco, agenda, whatsapp, computador, toledo, clima, instagram), banco);
   if (cliente) cerebro.cliente = cliente; // só nos testes
 
   function autorizado(req) {
@@ -295,6 +297,13 @@ export function criarJarvis(armazem, { senha = process.env.JARVIS_SENHA || "", c
           return json({ conectado: await agenda.conectado(), eventos: [], erro: erro.message });
         }
       }
+      case "GET /api/instagram/status":
+        if (!instagram.configurado) return json({ configurado: false });
+        try {
+          return json({ configurado: true, conta: (await instagram.conta()).username });
+        } catch (erro) {
+          return json({ configurado: true, erro: erro.message });
+        }
       case "GET /api/telegram/status":
         return json(await telegram.estado());
       case "POST /api/telegram/conectar":
@@ -311,7 +320,7 @@ export function criarJarvis(armazem, { senha = process.env.JARVIS_SENHA || "", c
       case "POST /api/whatsapp/teste":
         try {
           // O teste manda o próprio resumo do dia: serve de teste e de resumo na hora.
-          const resumo = await montarResumo(banco, agenda, new Date(), toledo, clima);
+          const resumo = await montarResumo(banco, agenda, new Date(), toledo, clima, instagram);
           const canalTelegram = await telegram.canal(); // no Telegram também, para responder no carro
           if (canalTelegram.configurado) await canalTelegram.enviar(resumo).catch((e) => console.error("Telegram, resumo:", e.message));
           return json(await whatsapp.enviar(resumo));
@@ -351,10 +360,13 @@ export async function verificarLembretesWhatsApp(armazem) {
   const resultado = await enviarLembretesVencidos(banco, armazem, whatsapp);
   await enviarLembretesVencidos(banco, armazem, telegram).catch((e) => console.error("Telegram, lembretes:", e.message));
   await banco.avancarRepetidos(); // lembretes que se repetem passam para a próxima vez
+  // Comentários e mensagens novas no Instagram (confere a cada 5 minutos).
+  const instagram = new Instagram(armazem);
+  const insta = await instagram.verificar([whatsapp, telegram]).catch((e) => (console.error("Instagram:", e.message), { avisos: 0 }));
   const agenda = new GoogleAgenda(armazem), toledo = new Toledo(), clima = new Clima(armazem);
-  const resumo = await enviarResumoDiario(banco, armazem, whatsapp, agenda, new Date(), undefined, toledo, clima);
-  await enviarResumoDiario(banco, armazem, telegram, agenda, new Date(), undefined, toledo, clima);
+  const resumo = await enviarResumoDiario(banco, armazem, whatsapp, agenda, new Date(), undefined, toledo, clima, instagram);
+  await enviarResumoDiario(banco, armazem, telegram, agenda, new Date(), undefined, toledo, clima, instagram);
   const relatorio = await enviarRelatorioMensal(banco, armazem, whatsapp);
   await enviarRelatorioMensal(banco, armazem, telegram);
-  return { ...resultado, resumo: resumo.enviado, relatorio: relatorio.enviado };
+  return { ...resultado, resumo: resumo.enviado, relatorio: relatorio.enviado, instagram: insta.avisos };
 }

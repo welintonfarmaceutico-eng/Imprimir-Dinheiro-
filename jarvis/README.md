@@ -142,6 +142,14 @@ No carro, o Google não encontra robôs pelo nome ("mandar mensagem para Jarvis"
 
 Só o seu chat fica ligado (código de uso único, válido por 15 minutos); mensagens de outras pessoas são ignoradas. Foto de nota fiscal mandada no Telegram também vira gasto. A conversa do Telegram recomeça a cada dia, para gastar menos.
 
+## Instagram da Porto e Toledo
+
+**Posts prontos:** peça "faz um post do Lote 09" e o Jarvis escreve legenda, hashtags e o melhor horário, com botão de copiar (no Telegram, o post vem numa mensagem separada).
+
+**Avisos de comentários e mensagens:** a cada 5 minutos o Jarvis confere o Instagram e avisa no WhatsApp e no Telegram; o resumo das 7h traz o que chegou desde ontem, e dá para perguntar "alguém comentou no Instagram?". Só leitura: responder é no próprio Instagram.
+
+Precisa de conta **Profissional** e do segredo `INSTAGRAM_TOKEN` no Cloudflare: no painel da Meta (developers.facebook.com), crie um app, adicione o produto Instagram ("API com login do Instagram"), adicione a conta da Porto e Toledo e gere o token. O Jarvis renova o token sozinho a cada 7 dias. Na primeira conferência ele só marca o que já existe, sem avisar o antigo.
+
 ## Jarvis PC (abrir programas, sites e volume no Windows)
 
 Um programa pequeno em PowerShell, que já vem no Windows, recebe as ordens do Jarvis e as executa no computador.

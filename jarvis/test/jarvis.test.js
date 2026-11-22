@@ -926,3 +926,73 @@ test("telegram: lembretes e resumo também chegam no Telegram (para responder no
   assert.deepEqual(await enviarResumoDiario(banco, armazem, zap, null, new Date("2026-11-22T10:00:00Z"), 7), { enviado: true });
   assert.match(tg.enviadas().at(-1).text, /Bom dia/);
 });
+
+// ---------- Instagram: post pronto e avisos de comentários/mensagens ----------
+import { Instagram } from "../src/instagram.js";
+
+test("instagram: post pronto chega junto com a resposta (tela e Telegram)", async () => {
+  const banco = novoBanco();
+  const cerebro = new Cerebro(criarFerramentas(banco), banco);
+  cerebro.cliente = clienteFalso([
+    { stop_reason: "tool_use", content: [{ type: "tool_use", id: "p1", name: "post_instagram", input: { legenda: "🏡 Lote 09, Quadra 10!\nChame no direct.", hashtags: "#lotes #montesclaros", melhor_horario: "terça às 19h" } }] },
+    { stop_reason: "end_turn", content: [{ type: "text", text: "Pronto, o post está na tela. Poste na terça às 19h." }] },
+  ]);
+  const r = await cerebro.conversar("ig1", "faz um post do lote 09");
+  assert.deepEqual(r.posts, [{ texto: "🏡 Lote 09, Quadra 10!\nChame no direct.\n\n#lotes #montesclaros", melhor_horario: "terça às 19h" }]);
+  await assert.rejects(criarFerramentas(banco).executar("post_instagram", { legenda: " ", hashtags: "", melhor_horario: "" }), /vazio/);
+});
+
+function graphFalso() {
+  const estado = { comentarios: [{ id: "c1", text: "quanto custa o lote?", username: "maria", timestamp: "2026-11-22T10:00:00+0000" }], mensagens: [], renovados: 0 };
+  const urls = [];
+  const f = async (url) => {
+    urls.push(url);
+    const u = new URL(url);
+    const p = u.pathname;
+    if (p.endsWith("/refresh_access_token")) { estado.renovados++; return Response.json({ access_token: "token-novo", expires_in: 5184000 }); }
+    if (p.endsWith("/me")) return Response.json({ user_id: "999", username: "portoetoledo" });
+    if (p.endsWith("/me/media")) return Response.json({ data: [{ id: "p1", caption: "Lote 09 da Quadra 10 à venda", comments_count: estado.comentarios.length }] });
+    if (p.endsWith("/p1/comments")) return Response.json({ data: estado.comentarios });
+    if (p.endsWith("/me/conversations")) return Response.json({ data: [{ messages: { data: estado.mensagens } }] });
+    return Response.json({ error: { message: "rota desconhecida", code: 100 } }, { status: 400 });
+  };
+  return { f, estado, urls };
+}
+
+test("instagram: primeira vez só marca o que já existe; depois avisa cada novidade uma vez", async () => {
+  const armazem = new ArmazemBlobs(blobsFalso());
+  const g = graphFalso();
+  const ig = new Instagram(armazem, { fetch: g.f, env: { INSTAGRAM_TOKEN: "tok" } });
+  const avisos = [];
+  const canal = { configurado: true, enviar: async (t) => avisos.push(t) };
+  const desligado = { configurado: false, enviar: async () => assert.fail("não deveria enviar") };
+  let t = Date.parse("2026-11-22T12:00:00Z");
+
+  assert.deepEqual(await ig.verificar([canal, desligado], t), { avisos: 0 }, "primeira vez não avisa o antigo");
+  g.estado.comentarios.push({ id: "c2", text: "tem financiamento?", username: "joao", timestamp: "x" }, { id: "c3", text: "obrigado!", username: "portoetoledo", timestamp: "x" });
+  g.estado.mensagens.push({ id: "m1", message: "Oi, quero visitar o lote", from: { username: "ana", id: "1" }, created_time: "x" }, { id: "m2", message: "Claro!", from: { username: "portoetoledo", id: "999" }, created_time: "x" });
+
+  assert.deepEqual(await ig.verificar([canal], t + 60_000), { avisos: 0 }, "espera 5 minutos entre conferências");
+  assert.deepEqual(await ig.verificar([canal, desligado], t += 5 * 60_000), { avisos: 2 });
+  assert.deepEqual(avisos, ['📸 Instagram: @joao comentou em "Lote 09 da Quadra 10 à venda": "tem financiamento?"', '💬 Instagram: mensagem de @ana: "Oi, quero visitar o lote"']);
+  assert.deepEqual(await ig.verificar([canal], t += 5 * 60_000), { avisos: 0 }, "não repete");
+
+  const resumo = await ig.textoResumo(t);
+  assert.match(resumo, /1 comentário e 1 mensagem/);
+  assert.match(resumo, /@ana: "Oi, quero visitar o lote"/);
+  assert.equal((await ig.recentes(24, t)).length, 2);
+
+  // Depois de 7 dias, renova o token sozinho e passa a usar o novo.
+  await ig.verificar([canal], t += 8 * 24 * 3600_000);
+  assert.equal(g.estado.renovados, 1);
+  await ig.verificar([canal], t += 5 * 60_000);
+  assert.match(g.urls.at(-1), /access_token=token-novo/);
+});
+
+test("instagram: token inválido vira mensagem clara; sem token não faz nada", async () => {
+  const armazem = new ArmazemBlobs(blobsFalso());
+  const ruim = async () => Response.json({ error: { message: "Error validating access token", code: 190 } }, { status: 400 });
+  const ig = new Instagram(armazem, { fetch: ruim, env: { INSTAGRAM_TOKEN: "velho" } });
+  await assert.rejects(ig.verificar([], Date.now()), /token do Instagram venceu/);
+  assert.deepEqual(await new Instagram(armazem, { env: {} }).verificar([]), { avisos: 0 });
+});
