@@ -311,7 +311,10 @@ export function criarJarvis(armazem, { senha = process.env.JARVIS_SENHA || "", c
       case "POST /api/whatsapp/teste":
         try {
           // O teste manda o próprio resumo do dia: serve de teste e de resumo na hora.
-          return json(await whatsapp.enviar(await montarResumo(banco, agenda, new Date(), toledo, clima)));
+          const resumo = await montarResumo(banco, agenda, new Date(), toledo, clima);
+          const canalTelegram = await telegram.canal(); // no Telegram também, para responder no carro
+          if (canalTelegram.configurado) await canalTelegram.enviar(resumo).catch((e) => console.error("Telegram, resumo:", e.message));
+          return json(await whatsapp.enviar(resumo));
         } catch (erro) {
           return json({ erro: erro.message }, 400);
         }
@@ -344,9 +347,14 @@ export async function verificarLembretesWhatsApp(armazem) {
   definirFuso();
   const banco = new Banco(armazem);
   const whatsapp = new WhatsApp();
+  const telegram = await new Telegram(armazem).canal(); // os avisos também vão para o Telegram, se conectado
   const resultado = await enviarLembretesVencidos(banco, armazem, whatsapp);
+  await enviarLembretesVencidos(banco, armazem, telegram).catch((e) => console.error("Telegram, lembretes:", e.message));
   await banco.avancarRepetidos(); // lembretes que se repetem passam para a próxima vez
-  const resumo = await enviarResumoDiario(banco, armazem, whatsapp, new GoogleAgenda(armazem), new Date(), undefined, new Toledo(), new Clima(armazem));
+  const agenda = new GoogleAgenda(armazem), toledo = new Toledo(), clima = new Clima(armazem);
+  const resumo = await enviarResumoDiario(banco, armazem, whatsapp, agenda, new Date(), undefined, toledo, clima);
+  await enviarResumoDiario(banco, armazem, telegram, agenda, new Date(), undefined, toledo, clima);
   const relatorio = await enviarRelatorioMensal(banco, armazem, whatsapp);
+  await enviarRelatorioMensal(banco, armazem, telegram);
   return { ...resultado, resumo: resumo.enviado, relatorio: relatorio.enviado };
 }

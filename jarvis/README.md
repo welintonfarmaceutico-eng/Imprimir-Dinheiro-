@@ -138,6 +138,8 @@ Converse com o Jarvis pelo Telegram, de qualquer lugar. No carro, o Android Auto
 2. No Cloudflare, adicione o segredo `TELEGRAM_BOT_TOKEN` com esse token.
 3. No Jarvis: **⚙ Ajustes → Telegram → Conectar Telegram → Abrir o Telegram** e toque em **Começar**.
 
+No carro, o Google não encontra robôs pelo nome ("mandar mensagem para Jarvis" não funciona). Por isso o Jarvis também manda no Telegram os lembretes, o resumo das 7h e o relatório do mês: no Android Auto, diga "responder" a uma mensagem dele (ou "Ok Google, ler minhas mensagens") e fale o pedido. O botão "Mandar resumo do dia" também manda no Telegram, para ter sempre uma mensagem dele à mão.
+
 Só o seu chat fica ligado (código de uso único, válido por 15 minutos); mensagens de outras pessoas são ignoradas. Foto de nota fiscal mandada no Telegram também vira gasto. A conversa do Telegram recomeça a cada dia, para gastar menos.
 
 ## Jarvis PC (abrir programas, sites e volume no Windows)

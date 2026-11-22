@@ -94,16 +94,17 @@ export async function enviarResumoDiario(banco, armazem, whatsapp, agenda, agora
   if (h < hora || h >= hora + JANELA_HORAS) return { enviado: false };
 
   const hoje = hojeLocal(agora);
-  const registro = (await armazem.obter("resumo-diario", hoje)) || { tentativas: 0 };
+  const colecao = whatsapp.nome === "telegram" ? "resumo-diario-telegram" : "resumo-diario"; // cada canal guarda o seu
+  const registro = (await armazem.obter(colecao, hoje)) || { tentativas: 0 };
   if (registro.enviado || registro.tentativas >= MAX_TENTATIVAS) return { enviado: false };
 
   try {
     await whatsapp.enviar(await montarResumo(banco, agenda, agora, toledo, clima));
-    await armazem.salvar("resumo-diario", hoje, { enviado: true, em: agora.toISOString() });
+    await armazem.salvar(colecao, hoje, { enviado: true, em: agora.toISOString() });
     return { enviado: true };
   } catch (erro) {
     console.error("Resumo diário:", erro.message);
-    await armazem.salvar("resumo-diario", hoje, { tentativas: registro.tentativas + 1 });
+    await armazem.salvar(colecao, hoje, { tentativas: registro.tentativas + 1 });
     return { enviado: false };
   }
 }
@@ -141,15 +142,16 @@ export async function enviarRelatorioMensal(banco, armazem, whatsapp, agora = ne
   if (!hoje.endsWith("-01") || h < hora || h >= hora + JANELA_HORAS) return { enviado: false };
 
   const mes = mesAnterior(hoje.slice(0, 7));
-  const registro = (await armazem.obter("relatorio-mensal", mes)) || { tentativas: 0 };
+  const colecao = whatsapp.nome === "telegram" ? "relatorio-mensal-telegram" : "relatorio-mensal";
+  const registro = (await armazem.obter(colecao, mes)) || { tentativas: 0 };
   if (registro.enviado || registro.tentativas >= MAX_TENTATIVAS) return { enviado: false };
   try {
     await whatsapp.enviar(await montarRelatorioMensal(banco, mes));
-    await armazem.salvar("relatorio-mensal", mes, { enviado: true, em: agora.toISOString() });
+    await armazem.salvar(colecao, mes, { enviado: true, em: agora.toISOString() });
     return { enviado: true };
   } catch (erro) {
     console.error("Relatório mensal:", erro.message);
-    await armazem.salvar("relatorio-mensal", mes, { tentativas: registro.tentativas + 1 });
+    await armazem.salvar(colecao, mes, { tentativas: registro.tentativas + 1 });
     return { enviado: false };
   }
 }

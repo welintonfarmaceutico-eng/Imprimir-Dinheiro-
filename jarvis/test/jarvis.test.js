@@ -902,3 +902,27 @@ test("telegram: foto vira gasto e botões viram links", async () => {
   });
   assert.equal(tg.enviadas().at(-1).text, "Seus créditos acabaram.");
 });
+
+test("telegram: lembretes e resumo também chegam no Telegram (para responder no carro)", async () => {
+  process.env.TZ = "America/Sao_Paulo";
+  const armazem = new ArmazemBlobs(blobsFalso());
+  const banco = new Banco(armazem);
+  const tg = telegramFalso();
+  const telegram = new Telegram(armazem, { fetch: tg.f, env: { TELEGRAM_BOT_TOKEN: "1:X" } });
+  assert.equal((await telegram.canal()).configurado, false, "sem chat ligado, nada vai para o Telegram");
+  await armazem.salvar("config", "telegram", { chatId: 42 });
+  const canal = await telegram.canal();
+  await banco.adicionarLembrete("tomar o remédio", "2026-11-21T11:00:00Z");
+  assert.deepEqual(await enviarLembretesVencidos(banco, armazem, canal, new Date("2026-11-21T11:01:00Z")), { enviados: 1 });
+  assert.deepEqual(await enviarLembretesVencidos(banco, armazem, canal, new Date("2026-11-21T11:02:00Z")), { enviados: 0 });
+  assert.equal(tg.enviadas().at(-1).text, "⏰ Lembrete do Jarvis: tomar o remédio");
+  assert.equal(tg.enviadas().at(-1).chat_id, 42);
+  // O registro do Telegram é separado do WhatsApp: um não impede o outro.
+  const cb = callmebotFalso();
+  const zap = new WhatsApp({ fetch: cb.f, env: { WHATSAPP_TELEFONE: "+55", WHATSAPP_APIKEY: "1" } });
+  assert.deepEqual(await enviarLembretesVencidos(banco, armazem, zap, new Date("2026-11-21T11:02:00Z")), { enviados: 1 });
+
+  assert.deepEqual(await enviarResumoDiario(banco, armazem, canal, null, new Date("2026-11-22T10:00:00Z"), 7), { enviado: true });
+  assert.deepEqual(await enviarResumoDiario(banco, armazem, zap, null, new Date("2026-11-22T10:00:00Z"), 7), { enviado: true });
+  assert.match(tg.enviadas().at(-1).text, /Bom dia/);
+});
