@@ -125,6 +125,8 @@ export class Telegram {
       } else if (texto) {
         const r = await jarvis.conversar(`telegram-${hojeLocal()}`, texto); // conversa nova a cada dia (mais barato)
         await this.enviar(chatId, r.texto, r.botoes || []);
+        // Cada post vai numa mensagem separada, para copiar ou encaminhar de uma vez.
+        for (const p of r.posts || []) await this.enviar(chatId, p.texto, [{ rotulo: "Abrir o Instagram", url: "https://www.instagram.com/" }]);
       } else {
         await this.enviar(chatId, "Por enquanto eu entendo texto e foto de nota fiscal. No carro, dite a mensagem que o Android Auto transforma em texto.");
       }

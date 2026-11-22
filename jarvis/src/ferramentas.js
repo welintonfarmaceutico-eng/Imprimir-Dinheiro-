@@ -10,7 +10,7 @@ const obj = (properties) => ({
   additionalProperties: false,
 });
 
-export function criarFerramentas(banco, agenda = null, whatsapp = null, computador = null, toledo = null, clima = null) {
+export function criarFerramentas(banco, agenda = null, whatsapp = null, computador = null, toledo = null, clima = null, instagram = null) {
   const ferramentas = [
     // ---------- Notas ----------
     {
@@ -251,6 +251,40 @@ export function criarFerramentas(banco, agenda = null, whatsapp = null, computad
       executar: ({ assunto }) => toledo.consultar(assunto),
     });
   }
+  // ---------- Instagram: comentários e mensagens recebidos ----------
+  if (instagram?.configurado) {
+    ferramentas.push({
+      definicao: {
+        name: "instagram_novidades",
+        description: "Lista os comentários e mensagens (direct) que chegaram no Instagram da Porto e Toledo nas últimas horas. Só leitura: para responder, o usuário abre o Instagram.",
+        input_schema: obj({ horas: { type: "integer", description: "Quantas horas para trás, ex.: 24" } }),
+      },
+      executar: async ({ horas }) => ({ novidades: (await instagram.recentes(Math.min(Math.max(horas || 24, 1), 168))).slice(0, 20) }),
+    });
+  }
+
+  // ---------- Post do Instagram (Porto e Toledo): legenda pronta para copiar ----------
+  ferramentas.push({
+    definicao: {
+      name: "post_instagram",
+      description:
+        "Mostra na tela um post pronto para o Instagram da Porto e Toledo (aluguéis e venda de lotes), com botão de copiar. " +
+        "Use quando pedirem post, legenda, anúncio ou divulgação no Instagram. Se precisar de dados reais (lotes, imóveis), consulte o sistema antes. " +
+        "A legenda pode ter emojis e quebras de linha; termine com uma chamada para ação (ex.: chamar no direct ou no WhatsApp). " +
+        "Nunca invente preço, metragem ou endereço: se não souber, deixe um espaço como [preço] para o usuário completar.",
+      input_schema: obj({
+        legenda: { type: "string", description: "Texto do post, pronto para colar, sem as hashtags" },
+        hashtags: { type: "string", description: "De 5 a 12 hashtags separadas por espaço, ex.: #lotes #imoveis #montesclaros" },
+        melhor_horario: { type: "string", description: "Sugestão curta de dia e hora para postar, ex.: \"terça às 19h\" (\"\" se não souber)" },
+      }),
+    },
+    executar: ({ legenda, hashtags, melhor_horario }) => {
+      const texto = [String(legenda ?? "").trim(), String(hashtags ?? "").trim()].filter(Boolean).join("\n\n").slice(0, 2200);
+      if (!texto) throw new Error("O post ficou vazio.");
+      return { post: { texto, melhor_horario: String(melhor_horario ?? "").trim() }, aviso: "O post já está na tela com o botão de copiar; não leia a legenda em voz alta, só diga que está pronto e o melhor horário." };
+    },
+  });
+
   const porNome = new Map(ferramentas.map((f) => [f.definicao.name, f]));
 
   return {

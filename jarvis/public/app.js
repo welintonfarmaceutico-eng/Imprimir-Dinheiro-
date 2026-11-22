@@ -76,6 +76,40 @@ function mostrarBotoes(botoes) {
   el.conversa.scrollTop = el.conversa.scrollHeight;
 }
 
+// Post do Instagram pronto: mostra o texto com botões para copiar e abrir o Instagram.
+function mostrarPosts(posts) {
+  if (!Array.isArray(posts)) return;
+  for (const p of posts) {
+    if (typeof p?.texto !== "string") continue;
+    const cartao = document.createElement("div");
+    cartao.className = "msg jarvis post-instagram";
+    const titulo = document.createElement("strong");
+    titulo.textContent = "📸 Post para o Instagram" + (p.melhor_horario ? ` · postar ${p.melhor_horario}` : "");
+    const corpo = document.createElement("div");
+    corpo.className = "post-texto";
+    corpo.textContent = p.texto;
+    const acoes = document.createElement("div");
+    acoes.className = "botoes-acao";
+    const copiar = document.createElement("button");
+    copiar.type = "button";
+    copiar.className = "botao botao-acao";
+    copiar.textContent = "📋 Copiar legenda";
+    copiar.addEventListener("click", async () => {
+      try { await navigator.clipboard.writeText(p.texto); copiar.textContent = "✅ Copiado!"; }
+      catch { copiar.textContent = "Segure no texto para copiar"; }
+    });
+    const abrir = document.createElement("a");
+    abrir.className = "botao-sec botao-acao";
+    abrir.href = "https://www.instagram.com/";
+    abrir.target = "_blank"; abrir.rel = "noopener noreferrer";
+    abrir.textContent = "Abrir o Instagram";
+    acoes.append(copiar, abrir);
+    cartao.append(titulo, corpo, acoes);
+    el.conversa.appendChild(cartao);
+  }
+  el.conversa.scrollTop = el.conversa.scrollHeight;
+}
+
 function adicionarMensagem(texto, tipo) {
   const div = document.createElement("div");
   div.className = `msg ${tipo}`;
@@ -174,6 +208,7 @@ async function enviar(texto) {
         if (!escrito.trim()) { bolha = adicionarMensagem(evento.texto, "jarvis"); paraFalar = evento.texto; }
         falarFrasesProntas(true);
         mostrarBotoes(evento.botoes);
+        mostrarPosts(evento.posts);
         if (evento.acoes?.length) atualizarPaineis();
         if (evento.acoes?.some((a) => a.startsWith("agenda_"))) atualizarAgenda();
       } else if (evento.tipo === "erro") {
@@ -824,3 +859,17 @@ $("conectarTelegram").addEventListener("click", async () => {
   }
 });
 $("botaoAjustes").addEventListener("click", atualizarTelegram);
+
+// ---------- Instagram (avisos de comentários e mensagens) ----------
+async function atualizarInstagram() {
+  const status = $("statusInstagram");
+  try {
+    const r = await api("/api/instagram/status");
+    status.textContent = !r.configurado
+      ? "Ainda não ligado: falta colocar o INSTAGRAM_TOKEN no Cloudflare."
+      : r.erro ? `⚠️ ${r.erro}` : `🟢 Ligado a @${r.conta}. Comentários e mensagens novas chegam no WhatsApp e no Telegram.`;
+  } catch (erro) {
+    status.textContent = erro.message;
+  }
+}
+$("botaoAjustes").addEventListener("click", atualizarInstagram);

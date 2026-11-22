@@ -19,7 +19,7 @@ const real = (v) => v.toLocaleString("pt-BR", { style: "currency", currency: "BR
 const horaMin = (d) => formatar(d, { hour: "2-digit", minute: "2-digit" });
 
 // Monta o texto do resumo, no fuso do usuário.
-export async function montarResumo(banco, agenda, agora = new Date(), toledo = null, clima = null) {
+export async function montarResumo(banco, agenda, agora = new Date(), toledo = null, clima = null, instagram = null) {
   const nome = process.env.JARVIS_NOME_USUARIO;
   const dia = formatar(agora, { weekday: "long", day: "2-digit", month: "2-digit" });
   const partes = [`☀️ Bom dia${nome ? `, ${nome}` : ""}! Resumo de ${dia}:`];
@@ -83,12 +83,21 @@ export async function montarResumo(banco, agenda, agora = new Date(), toledo = n
     }
   }
 
+  // Instagram da Porto e Toledo: comentários e mensagens desde ontem.
+  if (instagram?.configurado) {
+    try {
+      partes.push(await instagram.textoResumo(agora.getTime()));
+    } catch (erro) {
+      console.error("Resumo diário, Instagram:", erro.message);
+    }
+  }
+
   partes.push("Tenha um ótimo dia! 🚀");
   return partes.join("\n\n");
 }
 
 // Chamada a cada minuto: manda o resumo quando chega a hora, uma vez só por dia.
-export async function enviarResumoDiario(banco, armazem, whatsapp, agenda, agora = new Date(), hora = horaDoResumo(), toledo = null, clima = null) {
+export async function enviarResumoDiario(banco, armazem, whatsapp, agenda, agora = new Date(), hora = horaDoResumo(), toledo = null, clima = null, instagram = null) {
   if (!whatsapp.configurado || hora === null) return { enviado: false };
   const h = horaLocal(agora);
   if (h < hora || h >= hora + JANELA_HORAS) return { enviado: false };
@@ -99,7 +108,7 @@ export async function enviarResumoDiario(banco, armazem, whatsapp, agenda, agora
   if (registro.enviado || registro.tentativas >= MAX_TENTATIVAS) return { enviado: false };
 
   try {
-    await whatsapp.enviar(await montarResumo(banco, agenda, agora, toledo, clima));
+    await whatsapp.enviar(await montarResumo(banco, agenda, agora, toledo, clima, instagram));
     await armazem.salvar(colecao, hoje, { enviado: true, em: agora.toISOString() });
     return { enviado: true };
   } catch (erro) {

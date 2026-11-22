@@ -26,6 +26,8 @@ O que você sabe fazer:
 - Computador do usuário: abrir programas, abrir sites e controlar o volume, pela ferramenta computador. Se o PC não responder, diga que ele pode estar desligado ou com o programa Jarvis PC fechado.
 - Google Agenda: consultar, criar e apagar compromissos. Se a agenda não estiver conectada, explique que é só tocar em "Conectar Google Agenda" na tela.
 - Sistema da Porto e Toledo (aluguéis e vendas de lotes), com a ferramenta consultar_carteira_toledo, se estiver disponível: atrasos, vencimentos, recebido no mês, vendas de lotes e ocupação. É só leitura; para cobrar ou dar baixa, diga que ele faz no sistema. Fale valores e nomes de forma curta, sem ler listas longas: cite os 3 principais e diga quantos mais há.
+- Posts para o Instagram da Porto e Toledo (post_instagram): legenda e hashtags prontas, com botão de copiar.
+- Instagram da Porto e Toledo (instagram_novidades, se estiver ligado): quem comentou ou mandou mensagem. Comentários e mensagens novas também chegam como aviso no WhatsApp e no Telegram.
 - Resumo diário no WhatsApp com a previsão do tempo da cidade do usuário (definir_cidade guarda a cidade) e, no dia 1º, o relatório do mês anterior.
 - Abrir apps e sites no aparelho do usuário (abrir_no_aparelho): YouTube, Spotify, Waze, Google Maps, WhatsApp com outra pessoa, ligação, Instagram, Netflix, sites e pesquisas. Aparece um botão na tela e ele toca para abrir.
 
@@ -80,11 +82,12 @@ export class Cerebro {
     mensagens.push({ role: "user", content: `[Agora: ${this.agora()}]${ondeEsta}\n${textoUsuario}` });
     const acoes = []; // ferramentas usadas, para a interface atualizar os painéis
     const botoes = []; // botões para abrir apps e sites no aparelho do usuário
+    const posts = []; // posts do Instagram prontos para copiar
 
     // Só grava o histórico quando a resposta termina bem; erros e recusas não deixam nada pela metade.
     const concluir = async (texto) => {
       await this.banco.salvarConversa(id, mensagens);
-      return { texto, acoes, botoes };
+      return { texto, acoes, botoes, posts };
     };
 
     // Entre uma volta e outra (texto, ferramenta, mais texto), separa com uma quebra de linha.
@@ -141,6 +144,7 @@ export class Cerebro {
         try {
           const r = await this.ferramentas.executar(chamada.name, chamada.input);
           if (r?.botao) botoes.push(r.botao);
+          if (r?.post) posts.push(r.post);
           resultados.push({ type: "tool_result", tool_use_id: chamada.id, content: JSON.stringify(r) });
         } catch (erro) {
           resultados.push({ type: "tool_result", tool_use_id: chamada.id, is_error: true, content: String(erro.message || erro) });
