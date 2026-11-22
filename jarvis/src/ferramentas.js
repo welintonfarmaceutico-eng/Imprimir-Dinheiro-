@@ -1,6 +1,8 @@
 // Ferramentas que o Jarvis pode usar: notas, lembretes e finanças.
 // Cada ferramenta tem a definição enviada ao Claude e a função que executa.
 
+import { APPS, montarLink } from "./links.js";
+
 const obj = (properties) => ({
   type: "object",
   properties,
@@ -190,6 +192,27 @@ export function criarFerramentas(banco, agenda = null, whatsapp = null, computad
       executar: ({ acao, alvo }) => computador.executar(acao, alvo),
     });
   }
+
+  // ---------- Abrir app ou site no aparelho em que o usuário está (celular ou computador) ----------
+  ferramentas.push({
+    definicao: {
+      name: "abrir_no_aparelho",
+      description:
+        "Mostra na tela um botão para o usuário abrir um app ou site no aparelho que ele está usando agora; no celular Android, abre o próprio app. " +
+        "Use para: vídeo ou música (youtube, spotify), rota (waze, google_maps), mandar mensagem a OUTRA pessoa pelo WhatsApp (whatsapp: abre a conversa com o texto pronto, ele toca em enviar), " +
+        "ligar para alguém (ligar), perfil do Instagram (instagram), Netflix, abrir um site (site) ou uma pesquisa no Google (pesquisa). " +
+        "Campos: busca = o que procurar, o destino da rota, o endereço do site ou o @perfil (\"\" se não houver); numero = telefone com DDD (\"\" se não souber); " +
+        "mensagem = texto pronto para o WhatsApp (\"\" se não houver); nome = nome da pessoa (\"\" se não houver).",
+      input_schema: obj({
+        app: { type: "string", enum: APPS },
+        busca: { type: "string" },
+        numero: { type: "string" },
+        mensagem: { type: "string" },
+        nome: { type: "string" },
+      }),
+    },
+    executar: (input) => ({ botao: montarLink(input), aviso: "O botão já está na tela; diga em uma frase para o usuário tocar nele." }),
+  });
 
   const porNome = new Map(ferramentas.map((f) => [f.definicao.name, f]));
 

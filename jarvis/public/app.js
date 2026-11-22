@@ -52,6 +52,28 @@ function pulsar(forca = 1.18) {
   pulsoTimer = setTimeout(() => el.reator.style.setProperty("--pulso", "1"), 140);
 }
 
+// Celular ou computador: o Jarvis escolhe entre mostrar um botão (celular) ou abrir direto no PC.
+const APARELHO = /Android|iPhone|iPad|Mobi/i.test(navigator.userAgent) ? "celular" : "computador";
+
+// Botões para abrir apps e sites (YouTube, Waze, WhatsApp, ligação...). Só aceita http(s) e tel:.
+function mostrarBotoes(botoes) {
+  if (!Array.isArray(botoes) || !botoes.length) return;
+  const caixa = document.createElement("div");
+  caixa.className = "botoes-acao";
+  for (const b of botoes) {
+    if (typeof b?.url !== "string" || !/^(https?:|tel:)/i.test(b.url)) continue;
+    const a = document.createElement("a");
+    a.className = "botao botao-acao";
+    a.href = b.url;
+    a.textContent = `▶ ${b.rotulo || "Abrir"}`;
+    if (!b.url.startsWith("tel:")) { a.target = "_blank"; a.rel = "noopener noreferrer"; }
+    caixa.appendChild(a);
+  }
+  if (!caixa.children.length) return;
+  el.conversa.appendChild(caixa);
+  el.conversa.scrollTop = el.conversa.scrollHeight;
+}
+
 function adicionarMensagem(texto, tipo) {
   const div = document.createElement("div");
   div.className = `msg ${tipo}`;
@@ -138,7 +160,7 @@ async function enviar(texto) {
   };
 
   try {
-    await conversarAoVivo({ conversa: conversaId, texto }, (evento) => {
+    await conversarAoVivo({ conversa: conversaId, texto, aparelho: APARELHO }, (evento) => {
       if (evento.tipo === "texto") {
         if (!bolha) { bolha = adicionarMensagem("", "jarvis digitando"); definirEstado("falando", "Respondendo..."); }
         escrito += evento.delta;
@@ -149,6 +171,7 @@ async function enviar(texto) {
       } else if (evento.tipo === "fim") {
         if (!escrito.trim()) { bolha = adicionarMensagem(evento.texto, "jarvis"); paraFalar = evento.texto; }
         falarFrasesProntas(true);
+        mostrarBotoes(evento.botoes);
         if (evento.acoes?.length) atualizarPaineis();
         if (evento.acoes?.some((a) => a.startsWith("agenda_"))) atualizarAgenda();
       } else if (evento.tipo === "erro") {
