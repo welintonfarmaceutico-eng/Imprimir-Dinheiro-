@@ -130,6 +130,16 @@ Toque no 📷 ao lado do "Enviar" e tire a foto da nota, cupom ou recibo. O Jarv
 
 "Me lembra de tomar o remédio todo dia às 8h", "de segunda a sexta às 7h", "toda segunda" ou "todo dia 10". Cinco minutos depois de cada aviso, o lembrete passa para a próxima vez. Para parar, peça para concluir o lembrete. No botão "+ Lembrete" também tem a opção "Repetir".
 
+## Telegram (e Android Auto)
+
+Converse com o Jarvis pelo Telegram, de qualquer lugar. No carro, o Android Auto lê as respostas em voz alta e você responde ditando.
+
+1. No Telegram, fale com o **@BotFather**, mande `/newbot`, escolha um nome e um usuário terminado em `bot`. Ele entrega um **token**.
+2. No Cloudflare, adicione o segredo `TELEGRAM_BOT_TOKEN` com esse token.
+3. No Jarvis: **⚙ Ajustes → Telegram → Conectar Telegram → Abrir o Telegram** e toque em **Começar**.
+
+Só o seu chat fica ligado (código de uso único, válido por 15 minutos); mensagens de outras pessoas são ignoradas. Foto de nota fiscal mandada no Telegram também vira gasto. A conversa do Telegram recomeça a cada dia, para gastar menos.
+
 ## Jarvis PC (abrir programas, sites e volume no Windows)
 
 Um programa pequeno em PowerShell, que já vem no Windows, recebe as ordens do Jarvis e as executa no computador.

@@ -820,3 +820,85 @@ test("rotas: foto de nota e desfazer o gasto", async () => {
   assert.deepEqual(await (await post(tratar, "/api/transacoes/apagar", { id: r.transacao.id })).json(), { apagada: true });
   assert.equal((await new Banco(armazem).listarTransacoes()).length, 0);
 });
+
+// ---------- Telegram (simulado) ----------
+import { Telegram } from "../src/telegram.js";
+
+function telegramFalso() {
+  const chamadas = [];
+  const f = async (url, opcoes = {}) => {
+    const metodo = url.split("/").pop();
+    const corpo = opcoes.body ? JSON.parse(opcoes.body) : null;
+    chamadas.push({ metodo, corpo, url });
+    if (url.includes("/file/bot")) return new Response(Buffer.from("jpeg falso"));
+    const resultados = { getMe: { username: "MeuJarvisBot" }, getFile: { file_path: "photos/f1.jpg" } };
+    return Response.json({ ok: true, result: resultados[metodo] ?? true });
+  };
+  const enviadas = () => chamadas.filter((c) => c.metodo === "sendMessage").map((c) => c.corpo);
+  return { f, chamadas, enviadas };
+}
+
+test("telegram: liga com código de uso único, conversa só com o dono e ignora estranhos", async () => {
+  const armazem = new ArmazemBlobs(blobsFalso());
+  const tg = telegramFalso();
+  const env = { TELEGRAM_BOT_TOKEN: "123:ABC" };
+  const banco = new Banco(armazem);
+  const cerebro = new Cerebro(criarFerramentas(banco), banco);
+  cerebro.cliente = clienteFalso([{ stop_reason: "end_turn", content: [{ type: "text", text: "Você gastou R$ 30,00 este mês." }] }]);
+  const tratar = criarJarvis(armazem, { senha: "s", cliente: cerebro.cliente, telegramOpcoes: { fetch: tg.f, env } });
+  const telegram = new Telegram(armazem, { fetch: tg.f, env });
+  const pedir = (m, c, corpo) => tratar(new Request(`https://jarvis.exemplo${c}`, { method: m, headers: { "x-jarvis-senha": "s" }, body: corpo && JSON.stringify(corpo) }));
+  const webhook = (update, segredo = telegram.segredoWebhook) =>
+    tratar(new Request("https://jarvis.exemplo/api/telegram/webhook", { method: "POST", headers: { "x-telegram-bot-api-secret-token": segredo }, body: JSON.stringify(update) }));
+  const msg = (id, chat, text) => ({ update_id: id, message: { chat: { id: chat }, from: { first_name: "W" }, text } });
+
+  assert.deepEqual(await (await pedir("GET", "/api/telegram/status")).json(), { configurado: true, conectado: false, bot: null });
+  const { link, bot } = await (await pedir("POST", "/api/telegram/conectar", {})).json();
+  assert.equal(bot, "MeuJarvisBot");
+  const webhookConf = tg.chamadas.find((c) => c.metodo === "setWebhook").corpo;
+  assert.equal(webhookConf.url, "https://jarvis.exemplo/api/telegram/webhook");
+  assert.equal(webhookConf.secret_token, telegram.segredoWebhook);
+  const codigo = link.split("start=")[1];
+
+  assert.equal((await webhook(msg(1, 555, "/start " + codigo), "segredo-errado")).status, 401);
+  await webhook(msg(2, 999, "/start errado")); // estranho
+  assert.match(tg.enviadas().at(-1).text, /particular/);
+  await webhook(msg(3, 555, "/start " + codigo)); // o dono, pelo link
+  assert.match(tg.enviadas().at(-1).text, /Telegram conectado/);
+  assert.deepEqual(await (await pedir("GET", "/api/telegram/status")).json(), { configurado: true, conectado: true, bot: "MeuJarvisBot" });
+  await webhook(msg(4, 999, "quanto gastei?")); // estranho de novo: nada
+  const antes = tg.enviadas().length;
+  await webhook(msg(5, 555, "quanto gastei?"));
+  await webhook(msg(5, 555, "quanto gastei?")); // o Telegram reenviou: responde uma vez só
+  assert.equal(tg.enviadas().length, antes + 1);
+  assert.equal(tg.enviadas().at(-1).text, "Você gastou R$ 30,00 este mês.");
+  assert.equal(tg.enviadas().at(-1).chat_id, 555);
+  assert.match(cerebro.cliente.pedidos[0].messages[0].content, /\[Aparelho: celular\]/);
+  await webhook(msg(6, 555, "/start " + codigo)); // código já usado não religa nada
+});
+
+test("telegram: foto vira gasto e botões viram links", async () => {
+  const armazem = new ArmazemBlobs(blobsFalso());
+  const tg = telegramFalso();
+  const telegram = new Telegram(armazem, { fetch: tg.f, env: { TELEGRAM_BOT_TOKEN: "1:X" } });
+  await armazem.salvar("config", "telegram", { chatId: 7 });
+  let fotoRecebida;
+  await telegram.processar({ update_id: 1, message: { chat: { id: 7 }, photo: [{ file_id: "p" }, { file_id: "g" }] } }, {
+    notaFiscal: async (foto) => { fotoRecebida = foto; return { texto: "Anotei o gasto de R$ 10,00." }; },
+  });
+  assert.equal(tg.chamadas.find((c) => c.metodo === "getFile").corpo.file_id, "g", "usa a foto maior");
+  assert.equal(fotoRecebida.imagem, Buffer.from("jpeg falso").toString("base64"));
+  assert.equal(tg.enviadas().at(-1).text, "Anotei o gasto de R$ 10,00.");
+
+  await telegram.processar({ update_id: 2, message: { chat: { id: 7 }, text: "toca Legião" } }, {
+    conversar: async () => ({ texto: "Toque no botão.", botoes: [{ rotulo: "Spotify", url: "https://open.spotify.com/search/x" }, { rotulo: "Ligar para João", url: "tel:3899" }] }),
+  });
+  const ultima = tg.enviadas().at(-1);
+  assert.deepEqual(ultima.reply_markup, { inline_keyboard: [[{ text: "Spotify", url: "https://open.spotify.com/search/x" }]] });
+  assert.match(ultima.text, /Ligar para João: 3899/);
+
+  await telegram.processar({ update_id: 3, message: { chat: { id: 7 }, text: "oi" } }, {
+    conversar: async () => { const e = new Error("x"); e.mensagemParaUsuario = "Seus créditos acabaram."; throw e; },
+  });
+  assert.equal(tg.enviadas().at(-1).text, "Seus créditos acabaram.");
+});
