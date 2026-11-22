@@ -654,3 +654,17 @@ test("Toledo: resumo diário inclui a carteira e sobrevive à falha do sistema",
   assert.match(texto2, /não consegui consultar o sistema/);
   assert.match(texto2, /Finanças do mês/);
 });
+
+test("Toledo: usa o fetch padrão sem perder o 'this' (erro Illegal invocation no Cloudflare)", async () => {
+  const original = globalThis.fetch;
+  globalThis.fetch = function () {
+    if (this !== undefined && this !== globalThis) throw new TypeError("Illegal invocation");
+    return Promise.resolve(new Response(JSON.stringify({ hoje: "2026-11-21", imoveis: { total: 1, alugados: 1 } }), { status: 200 }));
+  };
+  try {
+    const r = await new Toledo({ TOLEDO_URL: "https://x/f", TOLEDO_TOKEN: "s" }).consultar("ocupacao");
+    assert.equal(r.imoveis.alugados, 1);
+  } finally {
+    globalThis.fetch = original;
+  }
+});

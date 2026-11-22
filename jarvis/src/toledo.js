@@ -6,9 +6,10 @@ const real = (v) => Number(v || 0).toLocaleString("pt-BR", { style: "currency", 
 const dataBR = (iso) => (iso ? iso.split("-").reverse().join("/") : "");
 
 export class Toledo {
-  constructor(env = process.env, buscar = fetch) {
+  constructor(env = process.env, buscar = (...args) => fetch(...args)) {
     this.url = (env.TOLEDO_URL || "").trim();
     this.token = (env.TOLEDO_TOKEN || "").trim();
+    // fetch não pode ser chamado como método de outro objeto no Cloudflare ("Illegal invocation"), por isso o padrão é uma função própria.
     this.buscar = buscar;
     this.configurado = Boolean(this.url && this.token);
   }
