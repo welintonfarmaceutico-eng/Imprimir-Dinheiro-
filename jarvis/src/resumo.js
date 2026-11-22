@@ -17,7 +17,7 @@ const real = (v) => v.toLocaleString("pt-BR", { style: "currency", currency: "BR
 const horaMin = (d) => formatar(d, { hour: "2-digit", minute: "2-digit" });
 
 // Monta o texto do resumo, no fuso do usuário.
-export async function montarResumo(banco, agenda, agora = new Date()) {
+export async function montarResumo(banco, agenda, agora = new Date(), toledo = null) {
   const nome = process.env.JARVIS_NOME_USUARIO;
   const dia = formatar(agora, { weekday: "long", day: "2-digit", month: "2-digit" });
   const partes = [`☀️ Bom dia${nome ? `, ${nome}` : ""}! Resumo de ${dia}:`];
@@ -61,12 +61,22 @@ export async function montarResumo(banco, agenda, agora = new Date()) {
       (maiores.length ? `\nMaiores gastos: ${maiores.join(", ")}.` : ""),
   );
 
+  // Carteira da Porto e Toledo (se estiver ligada). Falha aqui não derruba o resto do resumo.
+  if (toledo?.configurado) {
+    try {
+      partes.push(await toledo.textoResumo());
+    } catch (erro) {
+      console.error("Resumo diário, Toledo:", erro.message);
+      partes.push("🏢 Carteira Toledo: não consegui consultar o sistema agora.");
+    }
+  }
+
   partes.push("Tenha um ótimo dia! 🚀");
   return partes.join("\n\n");
 }
 
 // Chamada a cada minuto: manda o resumo quando chega a hora, uma vez só por dia.
-export async function enviarResumoDiario(banco, armazem, whatsapp, agenda, agora = new Date(), hora = horaDoResumo()) {
+export async function enviarResumoDiario(banco, armazem, whatsapp, agenda, agora = new Date(), hora = horaDoResumo(), toledo = null) {
   if (!whatsapp.configurado || hora === null) return { enviado: false };
   const h = horaLocal(agora);
   if (h < hora || h >= hora + JANELA_HORAS) return { enviado: false };
@@ -76,7 +86,7 @@ export async function enviarResumoDiario(banco, armazem, whatsapp, agenda, agora
   if (registro.enviado || registro.tentativas >= MAX_TENTATIVAS) return { enviado: false };
 
   try {
-    await whatsapp.enviar(await montarResumo(banco, agenda, agora));
+    await whatsapp.enviar(await montarResumo(banco, agenda, agora, toledo));
     await armazem.salvar("resumo-diario", hoje, { enviado: true, em: agora.toISOString() });
     return { enviado: true };
   } catch (erro) {
