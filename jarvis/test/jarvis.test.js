@@ -576,3 +576,31 @@ test("fuso: datas no horário de Brasília mesmo com o servidor em outro fuso", 
   assert.equal(lerData("2026-11-21T17:00").toISOString(), "2026-11-21T20:00:00.000Z");
   assert.equal(lerData("2026-11-21T17:00:00Z").toISOString(), "2026-11-21T17:00:00.000Z");
 });
+
+// ---------- Abrir apps e sites no aparelho (botões) ----------
+import { montarLink } from "../src/links.js";
+
+test("links: monta endereços seguros para cada app", () => {
+  assert.deepEqual(montarLink({ app: "youtube", busca: "receita de bolo" }), { rotulo: 'Ver "receita de bolo" no YouTube', url: "https://www.youtube.com/results?search_query=receita%20de%20bolo" });
+  assert.equal(montarLink({ app: "waze", busca: "Farmácia Central, Montes Claros" }).url, "https://waze.com/ul?q=Farm%C3%A1cia%20Central%2C%20Montes%20Claros&navigate=yes");
+  assert.equal(montarLink({ app: "whatsapp", numero: "(38) 99900-4949", mensagem: "Chego às 8", nome: "João" }).url, "https://wa.me/5538999004949?text=Chego%20%C3%A0s%208");
+  assert.equal(montarLink({ app: "whatsapp", mensagem: "oi" }).url, "https://wa.me/?text=oi");
+  assert.equal(montarLink({ app: "ligar", numero: "+55 38 99900-4949", nome: "João" }).url, "tel:+5538999004949");
+  assert.throws(() => montarLink({ app: "ligar", numero: "" }), /número/);
+  assert.equal(montarLink({ app: "site", busca: "g1.com.br" }).url, "https://g1.com.br");
+  assert.equal(montarLink({ app: "site", busca: "javascript:alert(1)" }).url, "https://www.google.com/search?q=javascript%3Aalert(1)");
+  assert.equal(montarLink({ app: "instagram", busca: "@jarvis.app" }).url, "https://www.instagram.com/jarvis.app/");
+  assert.throws(() => montarLink({ app: "qualquer" }), /não suportado/);
+});
+
+test("cérebro: botão de abrir app chega junto com a resposta e o aparelho vai na mensagem", async () => {
+  const banco = novoBanco();
+  const cerebro = new Cerebro(criarFerramentas(banco), banco);
+  cerebro.cliente = clienteFalso([
+    { stop_reason: "tool_use", content: [{ type: "tool_use", id: "t1", name: "abrir_no_aparelho", input: { app: "spotify", busca: "Legião Urbana", numero: "", mensagem: "", nome: "" } }] },
+    { stop_reason: "end_turn", content: [{ type: "text", text: "É só tocar no botão." }] },
+  ]);
+  const r = await cerebro.conversar("c9", "toca Legião Urbana", null, { aparelho: "celular" });
+  assert.deepEqual(r.botoes, [{ rotulo: 'Tocar "Legião Urbana" no Spotify', url: "https://open.spotify.com/search/Legi%C3%A3o%20Urbana" }]);
+  assert.match(cerebro.cliente.pedidos[0].messages[0].content, /\[Aparelho: celular\]\ntoca Legião Urbana$/);
+});

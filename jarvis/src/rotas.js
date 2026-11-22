@@ -77,7 +77,7 @@ export function criarJarvis(armazem, { senha = process.env.JARVIS_SENHA || "", c
       return json({ erro: "Envie 'conversa' e 'texto'." }, 400);
     }
     try {
-      return json(await cerebro.conversar(conversa, texto.trim().slice(0, 4000)));
+      return json(await cerebro.conversar(conversa, texto.trim().slice(0, 4000), null, { aparelho: req.headers.get("x-jarvis-aparelho") || "" }));
     } catch (erro) {
       console.error(erro);
       const { mensagem, credito } = explicarErro(erro);
@@ -88,7 +88,7 @@ export function criarJarvis(armazem, { senha = process.env.JARVIS_SENHA || "", c
 
   // Mesma conversa, mas a resposta vai chegando em tempo real (Server-Sent Events).
   async function conversarAoVivo(req) {
-    const { conversa, texto } = await corpo(req);
+    const { conversa, texto, aparelho } = await corpo(req);
     if (typeof conversa !== "string" || !ID_VALIDO.test(conversa) || typeof texto !== "string" || !texto.trim()) {
       return json({ erro: "Envie 'conversa' e 'texto'." }, 400);
     }
@@ -97,7 +97,7 @@ export function criarJarvis(armazem, { senha = process.env.JARVIS_SENHA || "", c
       async start(controle) {
         const enviar = (evento) => controle.enqueue(codificador.encode(`data: ${JSON.stringify(evento)}\n\n`));
         try {
-          const r = await cerebro.conversar(conversa, texto.trim().slice(0, 4000), (delta) => enviar({ tipo: "texto", delta }));
+          const r = await cerebro.conversar(conversa, texto.trim().slice(0, 4000), (delta) => enviar({ tipo: "texto", delta }), { aparelho });
           enviar({ tipo: "fim", ...r });
         } catch (erro) {
           console.error(erro);

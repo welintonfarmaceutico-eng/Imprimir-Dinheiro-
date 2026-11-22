@@ -25,10 +25,13 @@ O que você sabe fazer:
 - WhatsApp: os lembretes também chegam no WhatsApp do usuário, se estiver configurado, e você pode mandar mensagens para ele quando ele pedir.
 - Computador do usuário: abrir programas, abrir sites e controlar o volume, pela ferramenta computador. Se o PC não responder, diga que ele pode estar desligado ou com o programa Jarvis PC fechado.
 - Google Agenda: consultar, criar e apagar compromissos. Se a agenda não estiver conectada, explique que é só tocar em "Conectar Google Agenda" na tela.
+- Abrir apps e sites no aparelho do usuário (abrir_no_aparelho): YouTube, Spotify, Waze, Google Maps, WhatsApp com outra pessoa, ligação, Instagram, Netflix, sites e pesquisas. Aparece um botão na tela e ele toca para abrir.
 
 Regras:
 - Quando o usuário mencionar um gasto ou ganho ("gastei 30 no almoço", "recebi 2 mil"), registre sem pedir confirmação e confirme em uma frase.
 - "Me lembra de..." é um lembrete do Jarvis (criar_lembrete). "Marca", "agenda" ou "coloca na agenda" é um compromisso no Google Agenda.
+- Cada mensagem também diz o aparelho do usuário entre colchetes. Para "abre...", "toca...", "me leva para...", "liga para..." ou "manda mensagem para [outra pessoa]": no celular, use abrir_no_aparelho; no computador, use a ferramenta computador (abre direto no PC) e, se o PC não responder, use abrir_no_aparelho. Se ele disser "no PC" ou "no computador", use sempre a ferramenta computador.
+- "Manda no meu WhatsApp" é enviar_whatsapp (para ele mesmo). "Manda mensagem para o João no WhatsApp" é abrir_no_aparelho com app whatsapp.
 - Para apagar algo, primeiro liste para descobrir o id. Se houver dúvida sobre qual item apagar, pergunte.
 - Se não souber algo e não puder pesquisar, diga isso com honestidade.`;
 }
@@ -69,15 +72,17 @@ export class Cerebro {
   }
 
   // Envia uma mensagem e devolve { texto, acoes }. Com "aoTexto", o texto vai chegando em tempo real.
-  async conversar(id, textoUsuario, aoTexto = null) {
+  async conversar(id, textoUsuario, aoTexto = null, { aparelho = "" } = {}) {
     const mensagens = await this.banco.obterConversa(id);
-    mensagens.push({ role: "user", content: `[Agora: ${this.agora()}]\n${textoUsuario}` });
+    const ondeEsta = aparelho === "celular" || aparelho === "computador" ? ` [Aparelho: ${aparelho}]` : "";
+    mensagens.push({ role: "user", content: `[Agora: ${this.agora()}]${ondeEsta}\n${textoUsuario}` });
     const acoes = []; // ferramentas usadas, para a interface atualizar os painéis
+    const botoes = []; // botões para abrir apps e sites no aparelho do usuário
 
     // Só grava o histórico quando a resposta termina bem; erros e recusas não deixam nada pela metade.
     const concluir = async (texto) => {
       await this.banco.salvarConversa(id, mensagens);
-      return { texto, acoes };
+      return { texto, acoes, botoes };
     };
 
     // Entre uma volta e outra (texto, ferramenta, mais texto), separa com uma quebra de linha.
@@ -133,6 +138,7 @@ export class Cerebro {
         acoes.push(chamada.name);
         try {
           const r = await this.ferramentas.executar(chamada.name, chamada.input);
+          if (r?.botao) botoes.push(r.botao);
           resultados.push({ type: "tool_result", tool_use_id: chamada.id, content: JSON.stringify(r) });
         } catch (erro) {
           resultados.push({ type: "tool_result", tool_use_id: chamada.id, is_error: true, content: String(erro.message || erro) });
