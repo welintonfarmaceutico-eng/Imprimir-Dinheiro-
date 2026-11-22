@@ -11,6 +11,7 @@ import { WhatsApp, enviarLembretesVencidos } from "./whatsapp.js";
 import { Computador } from "./computador.js";
 import { enviarRelatorioMensal, enviarResumoDiario, montarResumo } from "./resumo.js";
 import { Clima } from "./clima.js";
+import { registrarNotaFiscal } from "./notaFiscal.js";
 import { Toledo } from "./toledo.js";
 
 const json = (dados, status = 200) => Response.json(dados, { status });
@@ -211,6 +212,23 @@ export function criarJarvis(armazem, { senha = process.env.JARVIS_SENHA || "", c
       case "POST /api/transacoes":
       case "POST /api/lembretes":
         return adicionarRapido(rota, await corpo(req));
+      case "POST /api/nota-fiscal": {
+        const { imagem, tipo } = await corpo(req);
+        try {
+          return json(await registrarNotaFiscal(cerebro.cliente, banco, { imagem, tipo }));
+        } catch (erro) {
+          if (!(erro instanceof Anthropic.APIError)) return json({ erro: erro.message }, 400);
+          console.error(erro);
+          const { mensagem, credito } = explicarErro(erro);
+          if (credito) await avisarCreditoNoWhatsApp(mensagem);
+          return json({ erro: mensagem }, 500);
+        }
+      }
+      case "POST /api/transacoes/apagar": {
+        const { id } = await corpo(req);
+        if (typeof id !== "string" || !ID_VALIDO.test(id)) return json({ erro: "id inválido" }, 400);
+        return json({ apagada: await banco.apagarTransacao(id) });
+      }
       case "POST /api/conversa/limpar": {
         const { conversa } = await corpo(req);
         if (typeof conversa === "string" && ID_VALIDO.test(conversa)) await cerebro.limpar(conversa);

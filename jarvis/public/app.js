@@ -745,3 +745,49 @@ atualizarPaineis();
 atualizarAgenda();
 verificarLembretes();
 setInterval(atualizarAgenda, 5 * 60 * 1000);
+
+// ---------- Foto de nota fiscal: o Jarvis lê e anota o gasto ----------
+// Reduz a foto no próprio aparelho (mais rápido e mais barato) e manda como JPEG.
+async function prepararFoto(arquivo, lado = 1600) {
+  const imagem = await createImageBitmap(arquivo);
+  const escala = Math.min(1, lado / Math.max(imagem.width, imagem.height));
+  const tela = document.createElement("canvas");
+  tela.width = Math.round(imagem.width * escala);
+  tela.height = Math.round(imagem.height * escala);
+  tela.getContext("2d").drawImage(imagem, 0, 0, tela.width, tela.height);
+  return tela.toDataURL("image/jpeg", 0.85).split(",")[1];
+}
+
+$("fotoNota").addEventListener("change", async (e) => {
+  const arquivo = e.target.files?.[0];
+  e.target.value = ""; // permite mandar a mesma foto de novo
+  if (!arquivo || ocupado) return;
+  ocupado = true;
+  pararDeOuvir();
+  adicionarMensagem("📷 Foto de nota fiscal", "usuario");
+  definirEstado("pensando", "Lendo a nota...");
+  try {
+    const r = await api("/api/nota-fiscal", { method: "POST", body: JSON.stringify({ imagem: await prepararFoto(arquivo), tipo: "image/jpeg" }) });
+    const bolha = adicionarMensagem(r.texto, "jarvis");
+    if (r.transacao) {
+      const desfazer = criar("button", { type: "button", className: "botao-sec botao-desfazer", textContent: "Desfazer" });
+      desfazer.addEventListener("click", async () => {
+        desfazer.disabled = true;
+        try {
+          await api("/api/transacoes/apagar", { method: "POST", body: JSON.stringify({ id: r.transacao.id }) });
+          bolha.textContent = "Gasto da nota desfeito.";
+          atualizarPaineis();
+        } catch (erro) { desfazer.disabled = false; adicionarMensagem(erro.message, "jarvis erro"); }
+      });
+      bolha.append(" ", desfazer);
+      atualizarPaineis();
+    }
+    await falando.falar(r.texto);
+  } catch (erro) {
+    adicionarMensagem(erro.message, "jarvis erro");
+  } finally {
+    ocupado = false;
+    definirEstado(null);
+    if (el.escuta.checked) comecarAOuvir();
+  }
+});

@@ -122,6 +122,10 @@ Todo dia, às 7h (ou na hora de `JARVIS_RESUMO_HORA`), chega no WhatsApp um resu
 
 **Relatório do mês:** no dia 1º, junto com o resumo, chega o relatório do mês anterior: entradas, saídas, saldo, maiores gastos e a comparação com o mês de antes.
 
+### Foto de nota fiscal
+
+Toque no 📷 ao lado do "Enviar" e tire a foto da nota, cupom ou recibo. O Jarvis lê o valor total, a loja, a data e escolhe a categoria, e anota o gasto sozinho. Se ler errado, toque em "Desfazer". Cada foto gasta alguns centavos de crédito da Anthropic (a foto é reduzida no aparelho antes de ser enviada).
+
 ### Lembretes que se repetem
 
 "Me lembra de tomar o remédio todo dia às 8h", "de segunda a sexta às 7h", "toda segunda" ou "todo dia 10". Cinco minutos depois de cada aviso, o lembrete passa para a próxima vez. Para parar, peça para concluir o lembrete. No botão "+ Lembrete" também tem a opção "Repetir".

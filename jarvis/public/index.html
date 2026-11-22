@@ -61,6 +61,9 @@
 
       <form class="entrada" id="formulario">
         <input id="texto" autocomplete="off" placeholder="Digite ou fale com o Jarvis..." />
+        <label class="botao-sec botao-foto" title="Foto de nota fiscal ou recibo: o Jarvis anota o gasto" aria-label="Foto de nota fiscal">
+          📷<input type="file" id="fotoNota" accept="image/*" capture="environment" hidden />
+        </label>
         <button type="submit" class="botao">Enviar</button>
       </form>
     </section>
