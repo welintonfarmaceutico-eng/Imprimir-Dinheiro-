@@ -10,6 +10,7 @@ import { GoogleAgenda } from "./google.js";
 import { WhatsApp, enviarLembretesVencidos } from "./whatsapp.js";
 import { Computador } from "./computador.js";
 import { enviarResumoDiario, montarResumo } from "./resumo.js";
+import { Toledo } from "./toledo.js";
 
 const json = (dados, status = 200) => Response.json(dados, { status });
 const ID_VALIDO = /^[A-Za-z0-9-]{1,64}$/;
@@ -53,7 +54,8 @@ export function criarJarvis(armazem, { senha = process.env.JARVIS_SENHA || "", c
   const agenda = new GoogleAgenda(armazem);
   const whatsapp = new WhatsApp();
   const computador = new Computador(armazem, computadorOpcoes);
-  const cerebro = new Cerebro(criarFerramentas(banco, agenda, whatsapp, computador), banco);
+  const toledo = new Toledo();
+  const cerebro = new Cerebro(criarFerramentas(banco, agenda, whatsapp, computador, toledo), banco);
   if (cliente) cerebro.cliente = cliente; // só nos testes
 
   function autorizado(req) {
@@ -247,7 +249,7 @@ export function criarJarvis(armazem, { senha = process.env.JARVIS_SENHA || "", c
       case "POST /api/whatsapp/teste":
         try {
           // O teste manda o próprio resumo do dia: serve de teste e de resumo na hora.
-          return json(await whatsapp.enviar(await montarResumo(banco, agenda)));
+          return json(await whatsapp.enviar(await montarResumo(banco, agenda, new Date(), toledo)));
         } catch (erro) {
           return json({ erro: erro.message }, 400);
         }
@@ -281,6 +283,6 @@ export async function verificarLembretesWhatsApp(armazem) {
   const banco = new Banco(armazem);
   const whatsapp = new WhatsApp();
   const resultado = await enviarLembretesVencidos(banco, armazem, whatsapp);
-  const resumo = await enviarResumoDiario(banco, armazem, whatsapp, new GoogleAgenda(armazem));
+  const resumo = await enviarResumoDiario(banco, armazem, whatsapp, new GoogleAgenda(armazem), new Date(), undefined, new Toledo());
   return { ...resultado, resumo: resumo.enviado };
 }

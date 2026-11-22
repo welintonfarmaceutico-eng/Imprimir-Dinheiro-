@@ -604,3 +604,53 @@ test("cérebro: botão de abrir app chega junto com a resposta e o aparelho vai 
   assert.deepEqual(r.botoes, [{ rotulo: 'Tocar "Legião Urbana" no Spotify', url: "https://open.spotify.com/search/Legi%C3%A3o%20Urbana" }]);
   assert.match(cerebro.cliente.pedidos[0].messages[0].content, /\[Aparelho: celular\]\ntoca Legião Urbana$/);
 });
+
+// ---------- Sistema Toledo (somente leitura) ----------
+import { Toledo } from "../src/toledo.js";
+
+const carteiraFalsa = {
+  hoje: "2026-11-22", mes: "2026-11",
+  recebidoNoMes: { total: 12500, alugueis: 2500, vendas: 10000 },
+  emAtraso: { quantidade: 1, total: 1050, itens: [{ tipo: "aluguel", nome: "Maria", imovel: "Casa 1", dias: 20, valor: 1000, totalComEncargos: 1050 }] },
+  aReceberNoMes: { quantidade: 2, total: 1820, itens: [] },
+  vencendoEm7Dias: { quantidade: 0, total: 0, itens: [] },
+  vendasDeLotes: [], imoveis: { total: 10, alugados: 5 },
+};
+const buscaFalsa = (status = 200, corpo = carteiraFalsa) => async (url, opcoes) => {
+  buscaFalsa.ultimo = { url, opcoes };
+  return { status, ok: status < 400, json: async () => corpo };
+};
+
+test("Toledo: sem TOLEDO_URL e TOLEDO_TOKEN a ferramenta não existe", () => {
+  const t = new Toledo({});
+  assert.equal(t.configurado, false);
+  const f = criarFerramentas(novoBanco(), null, null, null, t);
+  assert.equal(f.definicoes.some((d) => d.name === "consultar_carteira_toledo"), false);
+});
+
+test("Toledo: consulta manda a senha, recorta o assunto e não altera nada", async () => {
+  const t = new Toledo({ TOLEDO_URL: "https://x/f", TOLEDO_TOKEN: "segredo" }, buscaFalsa());
+  const f = criarFerramentas(novoBanco(), null, null, null, t);
+  assert.ok(f.definicoes.some((d) => d.name === "consultar_carteira_toledo"));
+  const r = await f.executar("consultar_carteira_toledo", { assunto: "atrasos" });
+  assert.equal(buscaFalsa.ultimo.opcoes.headers["x-jarvis-token"], "segredo");
+  assert.equal(r.emAtraso.quantidade, 1);
+  assert.equal(r.recebidoNoMes, undefined);
+});
+
+test("Toledo: senha recusada dá mensagem clara", async () => {
+  const t = new Toledo({ TOLEDO_URL: "https://x/f", TOLEDO_TOKEN: "errado" }, buscaFalsa(401, {}));
+  await assert.rejects(() => t.consultar("tudo"), /recusou a senha/);
+});
+
+test("Toledo: resumo diário inclui a carteira e sobrevive à falha do sistema", async () => {
+  const banco = novoBanco();
+  const bom = new Toledo({ TOLEDO_URL: "https://x/f", TOLEDO_TOKEN: "s" }, buscaFalsa());
+  const texto = await montarResumo(banco, { configurado: false }, new Date("2026-11-22T07:00:00-03:00"), bom);
+  assert.match(texto, /Carteira Toledo/);
+  assert.match(texto, /Em atraso: 1/);
+  const ruim = new Toledo({ TOLEDO_URL: "https://x/f", TOLEDO_TOKEN: "s" }, buscaFalsa(500, {}));
+  const texto2 = await montarResumo(banco, { configurado: false }, new Date("2026-11-22T07:00:00-03:00"), ruim);
+  assert.match(texto2, /não consegui consultar o sistema/);
+  assert.match(texto2, /Finanças do mês/);
+});
