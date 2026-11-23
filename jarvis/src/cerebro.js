@@ -77,7 +77,8 @@ export class Cerebro {
 
   // Envia uma mensagem e devolve { texto, acoes }. Com "aoTexto", o texto vai chegando em tempo real.
   async conversar(id, textoUsuario, aoTexto = null, { aparelho = "" } = {}) {
-    const mensagens = await this.banco.obterConversa(id);
+    // Conversas antigas podem ter o marcador técnico gravado: limpa antes de mandar de novo.
+    const mensagens = (await this.banco.obterConversa(id)).map((m) => (m.role === "assistant" ? { ...m, content: limparMarcadores(m.content) } : m));
     const ondeEsta = aparelho === "celular" || aparelho === "computador" ? ` [Aparelho: ${aparelho}]` : "";
     mensagens.push({ role: "user", content: `[Agora: ${this.agora()}]${ondeEsta}\n${textoUsuario}` });
     const acoes = []; // ferramentas usadas, para a interface atualizar os painéis
@@ -92,10 +93,15 @@ export class Cerebro {
 
     // Entre uma volta e outra (texto, ferramenta, mais texto), separa com uma quebra de linha.
     let jaEscreveu = false;
-    const repassar = aoTexto && ((delta) => { jaEscreveu = true; aoTexto(delta); });
+    const filtro = filtroDeMarcador();
+    const repassar = aoTexto && ((delta) => {
+      const limpo = filtro.passar(delta);
+      if (limpo) { jaEscreveu = true; aoTexto(limpo); }
+    });
 
     for (let volta = 0; volta < MAX_VOLTAS; volta++) {
       if (repassar && jaEscreveu && volta > 0) aoTexto("\n");
+      filtro.reiniciar();
       const resposta = await this.#pedir({
         model: MODELO,
         max_tokens: 16000,
@@ -113,6 +119,7 @@ export class Cerebro {
         // Resume conversas muito longas automaticamente.
         context_management: { edits: [{ type: "compact_20260112" }] },
       }, repassar);
+      if (repassar) { const resto = filtro.terminar(); if (resto) { jaEscreveu = true; aoTexto(resto); } }
 
       if (resposta.input_transformations?.length) {
         console.warn("Raciocínio antigo descartado:", JSON.stringify(resposta.input_transformations));
@@ -123,7 +130,7 @@ export class Cerebro {
       }
 
       // Guarda a resposta como veio (exigido pela API), só tirando o que ficou antes de uma troca de modelo.
-      const conteudo = limparFallback(resposta.content);
+      const conteudo = limparMarcadores(limparFallback(resposta.content));
       mensagens.push({ role: "assistant", content: conteudo });
 
       if (resposta.stop_reason === "pause_turn") continue; // busca longa: continua
@@ -170,3 +177,56 @@ export function limparFallback(conteudo) {
   });
 }
 
+
+// Às vezes a IA começa a resposta com um marcador técnico ("antml:final_response:"). Ele não deve
+// aparecer nem ser falado, e não pode ficar no histórico (senão a IA passa a repetir em toda resposta).
+const MARCADOR = /^\s*(?:antml\s*:\s*)?[a-z_]*final_response\s*:\s*|^\s*antml\s*:\s*[\w-]+\s*:\s*/i;
+const MARCADOR_GLOBAL = /(^|\n)\s*(?:antml\s*:\s*)?[a-z_]*final_response\s*:\s*|(^|\n)\s*antml\s*:\s*[\w-]+\s*:\s*/gi;
+const PREFIXOS = ["antml:final_response:", "final_response:"];
+
+export function tirarMarcadores(texto) {
+  return String(texto ?? "").replace(MARCADOR_GLOBAL, (_, a, b) => a ?? b ?? "");
+}
+
+export function limparMarcadores(conteudo) {
+  if (!Array.isArray(conteudo)) return conteudo;
+  return conteudo.map((b) => {
+    if (b?.type !== "text" || typeof b.text !== "string") return b;
+    const texto = tirarMarcadores(b.text);
+    return texto === b.text ? b : { ...b, text: texto };
+  });
+}
+
+// No streaming, o começo de cada resposta fica retido até dar para saber se é o marcador.
+export function filtroDeMarcador() {
+  let pendente = "";
+  let decidido = false;
+  const podeSerMarcador = (t) => {
+    const s = t.trimStart().toLowerCase();
+    if (!s) return true;
+    if (PREFIXOS.some((p) => p.startsWith(s))) return true;
+    return /^antml\s*:\s*[\w-]*\s*$/.test(s) && s.length < 60;
+  };
+  return {
+    passar(delta) {
+      if (decidido) return delta;
+      pendente += delta;
+      if (MARCADOR.test(pendente)) {
+        const resto = pendente.replace(MARCADOR, "");
+        if (resto) { decidido = true; pendente = ""; return resto; }
+        return ""; // marcador inteiro, ainda sem texto depois
+      }
+      if (podeSerMarcador(pendente)) return "";
+      decidido = true;
+      const saida = pendente;
+      pendente = "";
+      return saida;
+    },
+    terminar() {
+      const saida = decidido ? "" : pendente.replace(MARCADOR, "");
+      pendente = "";
+      return saida;
+    },
+    reiniciar() { pendente = ""; decidido = false; },
+  };
+}

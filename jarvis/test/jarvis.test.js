@@ -996,3 +996,36 @@ test("instagram: token inválido vira mensagem clara; sem token não faz nada", 
   await assert.rejects(ig.verificar([], Date.now()), /token do Instagram venceu/);
   assert.deepEqual(await new Instagram(armazem, { env: {} }).verificar([]), { avisos: 0 });
 });
+
+// ---------- Marcador técnico vazado ("antml:final_response:") ----------
+import { filtroDeMarcador } from "../src/cerebro.js";
+
+test("cérebro: marcador técnico some da fala, da resposta e do histórico", async () => {
+  const banco = novoBanco();
+  const cerebro = new Cerebro(criarFerramentas(banco), banco);
+  cerebro.cliente = clienteFalso([
+    { stop_reason: "end_turn", content: [{ type: "text", text: "antml:final_response:Boa noite! Tudo certo." }] },
+    { stop_reason: "end_turn", content: [{ type: "text", text: "Pronto." }] },
+  ]);
+  let falado = "";
+  const r = await cerebro.conversar("mk1", "oi", (d) => (falado += d));
+  assert.equal(r.texto, "Boa noite! Tudo certo.");
+  assert.equal(falado, "Boa noite! Tudo certo.");
+  await cerebro.conversar("mk1", "e agora?");
+  assert.equal(cerebro.cliente.pedidos[1].messages[1].content[0].text, "Boa noite! Tudo certo.", "o histórico não leva o marcador");
+
+  // Conversa antiga já gravada com o marcador: é limpa antes de ir de novo para a IA.
+  await banco.salvarConversa("mk2", [{ role: "user", content: "oi" }, { role: "assistant", content: [{ type: "text", text: "antml:final_response:Olá" }] }]);
+  cerebro.cliente = clienteFalso([{ stop_reason: "end_turn", content: [{ type: "text", text: "Certo." }] }]);
+  await cerebro.conversar("mk2", "tudo bem?");
+  assert.equal(cerebro.cliente.pedidos[0].messages[1].content[0].text, "Olá");
+});
+
+test("filtro: segura o começo só enquanto pode ser o marcador", () => {
+  const rodar = (pedacos) => { const f = filtroDeMarcador(); return pedacos.map((p) => f.passar(p)).join("") + f.terminar(); };
+  assert.equal(rodar(["antml:final_", "response: Oi", " tudo bem"]), "Oi tudo bem");
+  assert.equal(rodar(["antes de ", "tudo"]), "antes de tudo");
+  assert.equal(rodar(["Boa noite"]), "Boa noite");
+  const f = filtroDeMarcador();
+  assert.equal(f.passar("Olá"), "Olá", "texto normal passa na hora, sem atraso");
+});
