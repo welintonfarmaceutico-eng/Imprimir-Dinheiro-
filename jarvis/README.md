@@ -146,6 +146,12 @@ No carro, o Google não encontra robôs pelo nome ("mandar mensagem para Jarvis"
 
 Só o seu chat fica ligado (código de uso único, válido por 15 minutos); mensagens de outras pessoas são ignoradas. Foto de nota fiscal mandada no Telegram também vira gasto. A conversa do Telegram recomeça a cada dia, para gastar menos.
 
+## Modo Escola (professor particular para criança)
+
+Crie no Cloudflare o segredo `JARVIS_SENHA_ESTUDANTE` (uma senha só da criança) e, se quiser, `JARVIS_NOME_ESTUDANTE` e `JARVIS_IDADE_ESTUDANTE` (padrão 10). Quem entra com essa senha vê só o professor: o servidor bloqueia finanças, agenda, lembretes, Porto e Toledo, PC, WhatsApp e Telegram (respondem 403).
+
+O professor segue a BNCC (por volta do 5º ano), não entrega a resposta pronta do dever (dá dicas e perguntas até a criança chegar lá), aceita foto do exercício, faz quiz e ensina inglês: as frases em inglês vêm entre `[en]` e `[/en]` e são faladas com voz americana; o atalho "Responder em inglês" faz a próxima fala ser entendida em inglês. Para trocar entre adulto e Modo Escola no mesmo aparelho: ⚙ Ajustes → "Trocar de pessoa".
+
 ## Instagram da Porto e Toledo
 
 **Posts prontos:** peça "faz um post do Lote 09" e o Jarvis escreve legenda, hashtags e o melhor horário, com botão de copiar (no Telegram, o post vem numa mensagem separada).

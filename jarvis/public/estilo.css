@@ -393,3 +393,19 @@ dialog h3 { font-family: "Orbitron", sans-serif; font-size: 15px; letter-spacing
   #painelLembretes, #painelFinancas, #painelToledo { max-height: calc(100vh - 110px); overflow-y: auto; }
   #painelLembretes { position: sticky; top: 18px; }
 }
+
+/* ---------- Modo Escola: só o professor (o servidor também bloqueia o resto) ---------- */
+body[data-perfil="estudante"] #painelLembretes,
+body[data-perfil="estudante"] #painelFinancas,
+body[data-perfil="estudante"] #painelToledo,
+body[data-perfil="estudante"] #hoje,
+body[data-perfil="estudante"] .abas,
+body[data-perfil="estudante"] .conexao,
+body[data-perfil="estudante"] .so-adulto { display: none !important; }
+body[data-perfil="estudante"] main { grid-template-columns: 1fr; grid-template-areas: "inicio"; max-width: 920px; }
+body[data-perfil="estudante"] .marca::after { content: " · ESCOLA"; font-size: .7em; letter-spacing: .15em; color: var(--acento-claro); }
+@media (max-width: 960px) {
+  body[data-perfil="estudante"] { --barra: 0px; }
+  body[data-perfil="estudante"] #abaInicio { display: flex !important; flex-direction: column; }
+  body[data-perfil="estudante"] .marca::after { content: " · ESCOLA"; }
+}
