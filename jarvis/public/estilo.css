@@ -73,6 +73,7 @@
 
 /* ---------- Base ---------- */
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 
 html, body {
   margin: 0;
@@ -125,11 +126,17 @@ header {
 main {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) minmax(320px, 2fr) minmax(220px, 1fr);
+  grid-template-columns: minmax(240px, 1fr) minmax(360px, 2fr) minmax(260px, 1.1fr);
+  grid-template-areas: "agenda inicio financas" "agenda inicio toledo";
+  grid-template-rows: auto 1fr;
   gap: 18px;
   padding: 18px 20px;
-  max-width: 1400px; margin: 0 auto;
+  max-width: 1500px; margin: 0 auto;
 }
+#abaInicio { grid-area: inicio; }
+#painelLembretes { grid-area: agenda; }
+#painelFinancas { grid-area: financas; }
+#painelToledo { grid-area: toledo; }
 
 .painel {
   background: var(--painel);
@@ -267,17 +274,51 @@ dialog h3 { font-family: "Orbitron", sans-serif; font-size: 15px; letter-spacing
 .nota-pc.ruim { color: var(--vermelho); }
 .erro-form { color: var(--vermelho); min-height: 1.2em; margin: 8px 0 0; }
 
+/* ---------- Abas (só no celular) ---------- */
+.abas { display: none; }
+
 /* ---------- Celular ---------- */
 @media (max-width: 960px) {
-  main { grid-template-columns: 1fr; padding: 12px 16px; }
-  .centro { order: -1; }
-  .reator { width: 160px; height: 160px; }
-  .a2 { inset: 16px; } .a3 { inset: 34px; } .nucleo { inset: 54px; }
-  .nucleo-canvas { inset: 10px; width: calc(100% - 20px); height: calc(100% - 20px); }
-  .conversa { max-height: 50vh; }
-  header { padding: 10px 16px; }
-  .relogio { display: none; }
+  :root { --topo: 54px; --barra: 64px; }
+  body { padding-bottom: calc(var(--barra) + env(safe-area-inset-bottom)); }
+  header { position: sticky; top: 0; z-index: 5; height: var(--topo); padding: 8px 12px; flex-wrap: nowrap; background: var(--fundo); }
+  .marca { font-size: 15px; letter-spacing: .22em; }
+  .relogio, .rotulo { display: none; }
+  .controles { gap: 8px; flex-wrap: nowrap; }
+  .chave span { font-size: 20px; }
+  .chave input { width: 16px; height: 16px; }
+
+  main { display: block; padding: 10px 12px; }
+  main > .aba { display: none; }
+  body[data-aba="inicio"] #abaInicio,
+  body[data-aba="agenda"] #painelLembretes,
+  body[data-aba="financas"] #painelFinancas,
+  body[data-aba="toledo"] #painelToledo { display: flex; flex-direction: column; }
+  main > .painel { padding: 12px 14px; }
+
+  /* Início ocupa a tela toda: a conversa rola e a caixa de texto fica embaixo */
+  #abaInicio { height: calc(100dvh - var(--topo) - var(--barra) - env(safe-area-inset-bottom) - 20px); gap: 8px; }
+  .reator { width: 118px; height: 118px; margin-top: 0; flex: none; }
+  .a2 { inset: 12px; }
+  .nucleo-canvas { inset: 8px; width: calc(100% - 16px); height: calc(100% - 16px); }
+  .conversa { flex: 1; max-height: none; min-height: 0; }
   .temas { grid-template-columns: repeat(3, 1fr); }
+
+  .abas {
+    display: grid; grid-template-columns: repeat(5, 1fr);
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 6;
+    height: calc(var(--barra) + env(safe-area-inset-bottom)); padding-bottom: env(safe-area-inset-bottom);
+    background: var(--fundo); border-top: 1px solid rgba(var(--acento-rgb), .28);
+    box-shadow: 0 -6px 24px rgba(0, 0, 0, .35);
+  }
+  .abas button {
+    font: inherit; font-size: 12px; font-weight: 600; color: var(--apagado);
+    background: none; border: none; display: grid; place-items: center; gap: 2px; padding: 6px 0; cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .abas button i { font-style: normal; font-size: 20px; line-height: 1; filter: grayscale(.6); opacity: .8; }
+  .abas button[aria-current="page"] { color: var(--acento-claro); }
+  .abas button[aria-current="page"] i { filter: none; opacity: 1; text-shadow: 0 0 10px var(--acento); }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -306,3 +347,49 @@ dialog h3 { font-family: "Orbitron", sans-serif; font-size: 15px; letter-spacing
 /* Diálogo do 📷 (analisar documento ou anotar nota) */
 .acoes-foto { flex-wrap: wrap; }
 #perguntaFoto { width: 100%; resize: vertical; }
+
+/* ---------- Resumo de hoje (topo do Início) ---------- */
+.hoje { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; width: 100%; }
+.hoje span {
+  font-family: "Exo 2", system-ui, sans-serif; font-size: 13px; color: var(--texto);
+  padding: 4px 10px; border-radius: 999px; border: 1px solid rgba(var(--acento-rgb), .28); background: rgba(var(--acento-rgb), .06);
+  max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* ---------- Atalhos embaixo da conversa ---------- */
+.atalhos { display: flex; gap: 6px; width: 100%; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; flex: none; }
+.atalhos::-webkit-scrollbar { display: none; }
+.atalho {
+  font: inherit; font-size: 14px; font-weight: 600; white-space: nowrap; cursor: pointer; flex: none;
+  color: var(--acento-claro); background: rgba(var(--acento-rgb), .08);
+  border: 1px solid rgba(var(--acento-rgb), .35); border-radius: 999px; padding: 5px 12px;
+}
+.atalho:hover, .atalho:active { background: rgba(var(--acento-rgb), .2); }
+.entrada { flex: none; }
+.botao-foto { font-size: 22px; font-weight: 700; padding: 0 14px; }
+
+/* ---------- Mensagens: leitura confortável, horário e copiar ---------- */
+.msg { line-height: 1.45; }
+.msg.jarvis { max-width: 92%; }
+.msg-meta { display: flex; gap: 10px; align-items: center; margin-top: -6px; font-size: 12px; color: var(--apagado); }
+.msg-meta.usuario { align-self: flex-end; }
+.msg-meta.jarvis { align-self: flex-start; }
+.msg-meta .copiar { font: inherit; font-size: 12px; color: var(--acento-claro); background: none; border: none; cursor: pointer; padding: 2px 4px; }
+
+/* ---------- Painel da Porto e Toledo ---------- */
+#painelToledo .kpi small { display: block; color: var(--apagado); font-size: 12px; margin-top: 2px; }
+#painelToledo .kpis { grid-template-columns: 1fr 1fr; }
+
+/* ---------- Ajustes organizados ---------- */
+.secao { margin: 10px 0 0; font-family: "Orbitron", sans-serif; font-size: 12px; letter-spacing: .15em; text-transform: uppercase; color: var(--acento); border-top: 1px solid rgba(var(--acento-rgb), .2); padding-top: 12px; }
+.campos .secao:first-child { border-top: none; padding-top: 0; margin-top: 0; }
+.conexao { display: grid; gap: 6px; padding: 10px; border: 1px solid rgba(var(--acento-rgb), .2); border-radius: 10px; }
+.conexao > b { font-weight: 600; }
+.conexao .nota-pc { margin: 0; }
+
+/* Computador: as colunas laterais rolam sozinhas se crescerem muito */
+@media (min-width: 961px) {
+  .conversa { max-height: 48vh; }
+  #painelLembretes, #painelFinancas, #painelToledo { max-height: calc(100vh - 110px); overflow-y: auto; }
+  #painelLembretes { position: sticky; top: 18px; }
+}

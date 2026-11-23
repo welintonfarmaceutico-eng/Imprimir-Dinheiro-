@@ -116,8 +116,33 @@ function adicionarMensagem(texto, tipo) {
   div.className = `msg ${tipo}`;
   div.textContent = texto;
   el.conversa.appendChild(div);
+  if (texto && !/digitando|aviso/.test(tipo)) adicionarMeta(div, tipo);
   el.conversa.scrollTop = el.conversa.scrollHeight;
   return div;
+}
+
+// Linha embaixo de cada mensagem: horário e, nas respostas do Jarvis, o botão de copiar.
+function adicionarMeta(bolha, tipo) {
+  if (bolha.nextElementSibling?.classList.contains("msg-meta")) return;
+  const meta = document.createElement("div");
+  meta.className = `msg-meta ${/usuario/.test(tipo) ? "usuario" : "jarvis"}`;
+  const hora = document.createElement("time");
+  hora.textContent = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  meta.append(hora);
+  if (/jarvis/.test(tipo) && !/erro/.test(tipo)) {
+    const copiar = document.createElement("button");
+    copiar.type = "button";
+    copiar.className = "copiar";
+    copiar.textContent = "📋 Copiar";
+    copiar.addEventListener("click", async () => {
+      const texto = [...bolha.childNodes].filter((n) => n.nodeType === Node.TEXT_NODE).map((n) => n.textContent).join("").trim();
+      try { await navigator.clipboard.writeText(texto); copiar.textContent = "✅ Copiado"; }
+      catch { copiar.textContent = "Segure no texto para copiar"; }
+      setTimeout(() => (copiar.textContent = "📋 Copiar"), 2500);
+    });
+    meta.append(copiar);
+  }
+  bolha.after(meta);
 }
 
 // ---------- Comunicação com o servidor ----------
@@ -225,6 +250,7 @@ async function enviar(texto, anexo = null) {
     falando.enfileirar(erro.message);
   } finally {
     bolha?.classList.remove("digitando");
+    if (bolha?.textContent) adicionarMeta(bolha, "jarvis");
     await falando.terminar();
     ocupado = false;
     definirEstado(null);
@@ -918,3 +944,116 @@ async function atualizarInstagram() {
   }
 }
 $("botaoAjustes").addEventListener("click", atualizarInstagram);
+
+// ---------- Abas (no celular, uma seção por vez; no computador, tudo lado a lado) ----------
+function irPara(aba) {
+  document.body.dataset.aba = aba;
+  guardar.escrever("jarvis.aba", aba);
+  document.querySelectorAll("#abas [data-ir]").forEach((b) => b.setAttribute("aria-current", b.dataset.ir === aba ? "page" : "false"));
+  if (aba === "inicio") el.conversa.scrollTop = el.conversa.scrollHeight;
+  if (aba === "toledo") atualizarToledo();
+  window.scrollTo({ top: 0 });
+}
+document.querySelectorAll("#abas [data-ir]").forEach((b) => b.addEventListener("click", () => irPara(b.dataset.ir)));
+$("abaAjustes").addEventListener("click", () => $("botaoAjustes").click());
+
+// ---------- Atalhos embaixo da conversa ----------
+const ATALHOS = [
+  { rotulo: "⚖️ Advogado", texto: "Pergunta jurídica: " },
+  { rotulo: "💊 Farmácia", texto: "Pergunta de farmácia: " },
+  { rotulo: "🧮 Contador", texto: "Pergunta para o contador: " },
+  { rotulo: "🏠 Imóveis", texto: "Sobre imóveis: " },
+  { rotulo: "📄 Documento", acao: "arquivo" },
+  { rotulo: "🧾 Nota fiscal", acao: "arquivo" },
+  { rotulo: "📸 Post Instagram", texto: "Faz um post do Instagram da Porto e Toledo sobre " },
+  { rotulo: "🏢 Resumo Toledo", enviar: "Me dá um resumo da Porto e Toledo" },
+  { rotulo: "💰 Gastos do mês", enviar: "Como estão meus gastos este mês?" },
+];
+for (const a of ATALHOS) {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = "atalho";
+  b.textContent = a.rotulo;
+  b.addEventListener("click", () => {
+    if (a.acao === "arquivo") return $("fotoNota").click();
+    if (a.enviar) return enviar(a.enviar);
+    el.texto.value = a.texto;
+    el.texto.focus();
+    el.texto.setSelectionRange(a.texto.length, a.texto.length);
+  });
+  $("atalhos").appendChild(b);
+}
+
+// ---------- Resumo de hoje (topo do Início) ----------
+async function atualizarHoje() {
+  const caixa = $("hoje");
+  try {
+    const h = await api("/api/hoje");
+    const itens = [];
+    if (h.previsao) itens.push(`🌤️ ${h.previsao.maxima}° / ${h.previsao.minima}° · ${h.previsao.condicao}${h.previsao.chuva != null ? ` · ${h.previsao.chuva}% chuva` : ""}`);
+    if (h.proximoEvento) itens.push(`📅 ${h.proximoEvento.diaInteiro ? "" : horaCurta(h.proximoEvento.inicio) + " "}${h.proximoEvento.titulo}`);
+    if (h.proximoLembrete) itens.push(`⏰ ${dataHora(h.proximoLembrete.quando)} · ${h.proximoLembrete.texto}`);
+    if (h.toledo) itens.push(h.toledo.atrasos ? `🔴 ${h.toledo.atrasos} em atraso · ${moeda(h.toledo.totalAtraso)}` : "🟢 Toledo sem atrasos");
+    caixa.replaceChildren(...itens.map((t) => Object.assign(document.createElement("span"), { textContent: t })));
+    caixa.hidden = !itens.length;
+  } catch {
+    caixa.hidden = true;
+  }
+}
+atualizarHoje();
+setInterval(atualizarHoje, 10 * 60 * 1000);
+
+// ---------- Painel da Porto e Toledo ----------
+let toledoCarregadoEm = 0;
+const dataCurta = (iso) => (iso ? String(iso).slice(0, 10).split("-").reverse().slice(0, 2).join("/") : "");
+const primeiro = (obj, chaves) => chaves.map((c) => obj?.[c]).find((v) => v != null && v !== "");
+async function atualizarToledo(forcar = false) {
+  if (!forcar && Date.now() - toledoCarregadoEm < 2 * 60 * 1000) return;
+  toledoCarregadoEm = Date.now();
+  const status = $("statusToledo");
+  try {
+    const d = await api("/api/toledo/painel");
+    if (!d.configurado || d.erro) {
+      status.textContent = d.erro ? `⚠️ ${d.erro}` : "O sistema Porto e Toledo ainda não está ligado ao Jarvis.";
+      status.hidden = false; $("kpisToledo").hidden = $("listasToledo").hidden = true;
+      return;
+    }
+    status.hidden = true;
+    $("kpisToledo").hidden = $("listasToledo").hidden = false;
+    $("tRecebido").textContent = moeda(d.recebidoNoMes?.total);
+    $("tRecebidoDetalhe").textContent = d.recebidoNoMes?.alugueis != null ? `aluguéis ${moeda(d.recebidoNoMes.alugueis)} · vendas ${moeda(d.recebidoNoMes.vendas)}` : "";
+    $("tAReceber").textContent = moeda(d.aReceberNoMes?.total);
+    $("tAtraso").textContent = moeda(d.emAtraso?.total);
+    $("tAtraso").className = d.emAtraso?.quantidade ? "valor saida" : "valor entrada";
+    $("tOcupacao").textContent = `${d.imoveis?.alugados ?? 0} de ${d.imoveis?.total ?? 0}`;
+    preencherLista($("listaAtrasos"), d.emAtraso?.itens || [], (i) => li(`${i.nome} · ${i.imovel}`, `${i.dias} dia${i.dias === 1 ? "" : "s"} · ${moeda(i.totalComEncargos ?? i.valor)}`), "Nada em atraso. 🎉");
+    preencherLista($("listaVencendo"), d.vencendoEm7Dias?.itens || [], (i) => li(`${i.nome}${i.imovel ? ` · ${i.imovel}` : ""}`, `${dataCurta(i.vencimento)} · ${moeda(i.valor)}`), "Nada vence nos próximos 7 dias.");
+    preencherLista($("listaLotes"), d.vendasDeLotes || [], (v) => {
+      const titulo = primeiro(v, ["lote", "imovel", "descricao", "titulo"]) || "Lote";
+      const quem = primeiro(v, ["comprador", "nome", "cliente"]);
+      const saldo = primeiro(v, ["saldo", "saldoDevedor", "restante"]);
+      const proxima = primeiro(v, ["proximoVencimento", "proximaParcela", "vencimento"]);
+      return li(`${titulo}${quem ? ` · ${quem}` : ""}`, [saldo != null && `saldo ${moeda(saldo)}`, proxima && `próxima ${dataCurta(proxima)}`].filter(Boolean).join(" · "));
+    }, "Nenhuma venda de lote em andamento.");
+  } catch (erro) {
+    status.textContent = erro.message; status.hidden = false;
+  }
+}
+$("atualizarToledo").addEventListener("click", () => atualizarToledo(true));
+if (window.matchMedia("(min-width: 961px)").matches) atualizarToledo();
+
+// ---------- Ajustes: estado do Google e do WhatsApp ----------
+async function atualizarConexoes() {
+  try {
+    const g = await api("/api/google/status");
+    $("statusGoogle").textContent = !g.configurado ? "⚪ Não configurado." : g.conectado ? "🟢 Conectado." : "⚪ Desconectado: toque em \"Conectar Google Agenda\" na Agenda.";
+  } catch (erro) { $("statusGoogle").textContent = erro.message; }
+  try {
+    const w = await api("/api/whatsapp/status");
+    $("statusWhatsapp").textContent = w.configurado ? "🟢 Ligado: lembretes e resumo das 7h chegam no WhatsApp." : "⚪ Não configurado.";
+  } catch (erro) { $("statusWhatsapp").textContent = erro.message; }
+}
+$("botaoAjustes").addEventListener("click", atualizarConexoes);
+
+// Abre na última aba usada (depois de tudo carregado).
+irPara(guardar.ler("jarvis.aba", "inicio"));
