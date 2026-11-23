@@ -263,6 +263,25 @@ export function criarFerramentas(banco, agenda = null, whatsapp = null, computad
     });
   }
 
+  // ---------- Documento pronto (jurídico e outros): texto completo com botão de copiar ----------
+  ferramentas.push({
+    definicao: {
+      name: "documento_pronto",
+      description:
+        "Mostra na tela um documento completo, pronto para copiar: notificação extrajudicial, contrato, distrato, recibo, termo de acordo, carta de cobrança, procuração simples etc. " +
+        "Use quando o usuário pedir para redigir ou preparar um documento. Use [campo] onde faltar dado (ex.: [CPF do locatário]). Texto simples, sem markdown.",
+      input_schema: obj({
+        titulo: { type: "string", description: "Nome curto do documento, ex.: \"Notificação extrajudicial de atraso de aluguel\"" },
+        texto: { type: "string", description: "O documento inteiro, com quebras de linha" },
+      }),
+    },
+    executar: ({ titulo, texto }) => {
+      texto = String(texto ?? "").trim().slice(0, 20000);
+      if (!texto) throw new Error("O documento ficou vazio.");
+      return { documento: { titulo: String(titulo ?? "").trim().slice(0, 120) || "Documento", texto }, aviso: "O documento já está na tela com botão de copiar; não leia em voz alta, só diga que está pronto e o que a pessoa precisa completar." };
+    },
+  });
+
   // ---------- Post do Instagram (Porto e Toledo): legenda pronta para copiar ----------
   ferramentas.push({
     definicao: {

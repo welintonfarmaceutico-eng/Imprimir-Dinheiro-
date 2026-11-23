@@ -1029,3 +1029,41 @@ test("filtro: segura o começo só enquanto pode ser o marcador", () => {
   const f = filtroDeMarcador();
   assert.equal(f.passar("Olá"), "Olá", "texto normal passa na hora, sem atraso");
 });
+
+// ---------- Orientação jurídica e documentos prontos ----------
+import { partes } from "../src/telegram.js";
+
+test("jurídico: instruções de advogado no sistema e documento pronto com botão de copiar", async () => {
+  const banco = novoBanco();
+  const cerebro = new Cerebro(criarFerramentas(banco), banco);
+  assert.match(cerebro.sistema, /advogado brasileiro experiente/);
+  assert.match(cerebro.sistema, /Lei 8\.245\/91/);
+  assert.match(cerebro.sistema, /OAB/);
+  cerebro.cliente = clienteFalso([
+    { stop_reason: "tool_use", content: [{ type: "tool_use", id: "d1", name: "documento_pronto", input: { titulo: "Notificação extrajudicial", texto: "NOTIFICAÇÃO\n\nPrezado [nome do inquilino]..." } }] },
+    { stop_reason: "end_turn", content: [{ type: "text", text: "A notificação está na tela. Complete o nome do inquilino." }] },
+  ]);
+  const r = await cerebro.conversar("adv1", "faz uma notificação de atraso");
+  assert.deepEqual(r.posts, [{ titulo: "Notificação extrajudicial", texto: "NOTIFICAÇÃO\n\nPrezado [nome do inquilino]..." }]);
+  await assert.rejects(criarFerramentas(banco).executar("documento_pronto", { titulo: "x", texto: " " }), /vazio/);
+});
+
+test("telegram: documento longo vai em partes, cortando em quebra de linha", async () => {
+  const texto = Array.from({ length: 300 }, (_, i) => `Cláusula ${i + 1}: texto da cláusula com algumas palavras.`).join("\n");
+  const pedacos = partes(texto, 3800);
+  assert.ok(pedacos.length > 1);
+  assert.ok(pedacos.every((p) => p.length <= 3800));
+  assert.equal(pedacos.join("\n"), texto);
+
+  const armazem = new ArmazemBlobs(blobsFalso());
+  const tg = telegramFalso();
+  const telegram = new Telegram(armazem, { fetch: tg.f, env: { TELEGRAM_BOT_TOKEN: "1:X" } });
+  await armazem.salvar("config", "telegram", { chatId: 9 });
+  await telegram.processar({ update_id: 1, message: { chat: { id: 9 }, text: "faz um contrato" } }, {
+    conversar: async () => ({ texto: "O contrato está pronto.", posts: [{ titulo: "Contrato de locação", texto }] }),
+  });
+  const enviadas = tg.enviadas();
+  assert.equal(enviadas[0].text, "O contrato está pronto.");
+  assert.match(enviadas[1].text, /^Contrato de locação\n\nCláusula 1:/);
+  assert.ok(enviadas.length >= 3, "o documento foi dividido");
+});
