@@ -126,7 +126,14 @@ export class Telegram {
         const r = await jarvis.conversar(`telegram-${hojeLocal()}`, texto); // conversa nova a cada dia (mais barato)
         await this.enviar(chatId, r.texto, r.botoes || []);
         // Cada post vai numa mensagem separada, para copiar ou encaminhar de uma vez.
-        for (const p of r.posts || []) await this.enviar(chatId, p.texto, [{ rotulo: "Abrir o Instagram", url: "https://www.instagram.com/" }]);
+        for (const p of r.posts || []) {
+          if (p.titulo) {
+            // Documento: pode ser longo; vai em partes de até 3.800 caracteres, cortando em quebra de linha.
+            for (const parte of partes(`${p.titulo}\n\n${p.texto}`, 3800)) await this.enviar(chatId, parte);
+          } else {
+            await this.enviar(chatId, p.texto, [{ rotulo: "Abrir o Instagram", url: "https://www.instagram.com/" }]);
+          }
+        }
       } else {
         await this.enviar(chatId, "Por enquanto eu entendo texto e foto de nota fiscal. No carro, dite a mensagem que o Android Auto transforma em texto.");
       }
@@ -134,4 +141,18 @@ export class Telegram {
       await this.enviar(chatId, erro.mensagemParaUsuario || erro.message || "Tive um problema agora. Tente de novo.").catch(() => {});
     }
   }
+}
+
+// Divide um texto longo em pedaços, de preferência numa quebra de linha.
+export function partes(texto, max) {
+  const saida = [];
+  let resto = String(texto);
+  while (resto.length > max) {
+    let corte = resto.lastIndexOf("\n", max);
+    if (corte < max * 0.5) corte = max;
+    saida.push(resto.slice(0, corte).trimEnd());
+    resto = resto.slice(corte).replace(/^\n+/, "");
+  }
+  if (resto.trim()) saida.push(resto);
+  return saida;
 }

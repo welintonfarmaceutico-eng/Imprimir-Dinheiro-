@@ -84,7 +84,7 @@ function mostrarPosts(posts) {
     const cartao = document.createElement("div");
     cartao.className = "msg jarvis post-instagram";
     const titulo = document.createElement("strong");
-    titulo.textContent = "📸 Post para o Instagram" + (p.melhor_horario ? ` · postar ${p.melhor_horario}` : "");
+    titulo.textContent = p.titulo ? `📄 ${p.titulo}` : "📸 Post para o Instagram" + (p.melhor_horario ? ` · postar ${p.melhor_horario}` : "");
     const corpo = document.createElement("div");
     corpo.className = "post-texto";
     corpo.textContent = p.texto;
@@ -93,7 +93,7 @@ function mostrarPosts(posts) {
     const copiar = document.createElement("button");
     copiar.type = "button";
     copiar.className = "botao botao-acao";
-    copiar.textContent = "📋 Copiar legenda";
+    copiar.textContent = p.titulo ? "📋 Copiar documento" : "📋 Copiar legenda";
     copiar.addEventListener("click", async () => {
       try { await navigator.clipboard.writeText(p.texto); copiar.textContent = "✅ Copiado!"; }
       catch { copiar.textContent = "Segure no texto para copiar"; }
@@ -103,7 +103,8 @@ function mostrarPosts(posts) {
     abrir.href = "https://www.instagram.com/";
     abrir.target = "_blank"; abrir.rel = "noopener noreferrer";
     abrir.textContent = "Abrir o Instagram";
-    acoes.append(copiar, abrir);
+    acoes.append(copiar);
+    if (!p.titulo) acoes.append(abrir);
     cartao.append(titulo, corpo, acoes);
     el.conversa.appendChild(cartao);
   }
