@@ -1138,3 +1138,33 @@ test("rotas: conversa ao vivo aceita documento e recusa formato inválido", asyn
   assert.match(texto, /É uma notificação/);
   assert.match(cliente.pedidos[0].messages[0].content[1].text, /Analise este documento e me oriente\./);
 });
+
+// ---------- Tela nova: resumo de hoje e painel da Toledo ----------
+test("rotas: resumo de hoje e painel da Porto e Toledo", async () => {
+  const armazem = new ArmazemBlobs(blobsFalso());
+  const original = globalThis.fetch;
+  const tratar = criarJarvis(armazem, { senha: "" });
+  const get = async (c) => (await tratar(new Request(`http://x${c}`))).json();
+  await new Banco(armazem).adicionarLembrete("Pagar a luz", new Date(Date.now() + 3600e3).toISOString());
+  const h = await get("/api/hoje");
+  assert.equal(h.proximoLembrete.texto, "Pagar a luz");
+  assert.equal(h.previsao, null);
+  assert.equal(h.toledo, null);
+  assert.deepEqual(await get("/api/toledo/painel"), { configurado: false });
+
+  // Com o sistema Toledo ligado
+  process.env.TOLEDO_URL = "https://toledo.exemplo/jarvis-leitura";
+  process.env.TOLEDO_TOKEN = "t";
+  globalThis.fetch = async () => Response.json(carteiraFalsa);
+  try {
+    const comToledo = criarJarvis(armazem, { senha: "" });
+    const painel = await (await comToledo(new Request("http://x/api/toledo/painel"))).json();
+    assert.equal(painel.configurado, true);
+    assert.equal(painel.recebidoNoMes.total, 12500);
+    const hoje = await (await comToledo(new Request("http://x/api/hoje"))).json();
+    assert.deepEqual(hoje.toledo, { atrasos: 1, totalAtraso: 1050, vencendo: 0 });
+  } finally {
+    globalThis.fetch = original;
+    delete process.env.TOLEDO_URL; delete process.env.TOLEDO_TOKEN;
+  }
+});

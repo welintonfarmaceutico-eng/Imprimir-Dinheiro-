@@ -302,6 +302,33 @@ export function criarJarvis(armazem, { senha = process.env.JARVIS_SENHA || "", c
           return json({ conectado: await agenda.conectado(), eventos: [], erro: erro.message });
         }
       }
+      case "GET /api/hoje": {
+        // Resumo rápido para o topo da tela: tempo, próximo lembrete, próximo compromisso e atrasos.
+        const agora = new Date();
+        const [previsao, lembretes, evento, carteira] = await Promise.all([
+          clima.previsaoDeHoje(agora).catch(() => null),
+          banco.listarLembretes().catch(() => []),
+          (async () => {
+            if (!agenda.configurado || !(await agenda.conectado())) return null;
+            const eventos = await agenda.listarEventos(agora, new Date(agora.getTime() + 2 * 24 * 3600 * 1000));
+            return eventos.find((e) => e.diaInteiro || new Date(e.fim || e.inicio) > agora) || null;
+          })().catch(() => null),
+          toledo.configurado ? toledo.carteira().catch(() => null) : null,
+        ]);
+        return json({
+          previsao,
+          proximoLembrete: lembretes.find((l) => new Date(l.quando) > agora) || null,
+          proximoEvento: evento,
+          toledo: carteira ? { atrasos: carteira.emAtraso.quantidade, totalAtraso: carteira.emAtraso.total, vencendo: carteira.vencendoEm7Dias.quantidade } : null,
+        });
+      }
+      case "GET /api/toledo/painel":
+        if (!toledo.configurado) return json({ configurado: false });
+        try {
+          return json({ configurado: true, ...(await toledo.carteira()) });
+        } catch (erro) {
+          return json({ configurado: true, erro: erro.message });
+        }
       case "GET /api/instagram/status":
         if (!instagram.configurado) return json({ configurado: false });
         try {

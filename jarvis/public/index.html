@@ -26,18 +26,40 @@
     <div class="relogio" id="relogio">--:--</div>
     <div class="controles">
       <label class="chave" title="Fica ouvindo e responde quando você diz &quot;Jarvis&quot;">
-        <input type="checkbox" id="escutaContinua" /> <span>Escuta contínua</span>
+        <input type="checkbox" id="escutaContinua" /> <span>🎙️<b class="rotulo"> Escuta contínua</b></span>
       </label>
       <label class="chave" title="Responder em voz alta">
-        <input type="checkbox" id="vozLigada" checked /> <span>Voz</span>
+        <input type="checkbox" id="vozLigada" checked /> <span>🔊<b class="rotulo"> Voz</b></span>
       </label>
-      <button class="botao-sec" id="novaConversa" title="Começar uma nova conversa">Nova conversa</button>
-      <button class="botao-sec icone" id="botaoAjustes" title="Tema e voz" aria-label="Tema e voz">⚙</button>
+      <button class="botao-sec icone" id="novaConversa" title="Começar uma nova conversa" aria-label="Nova conversa">↺<b class="rotulo"> Nova conversa</b></button>
+      <button class="botao-sec icone" id="botaoAjustes" title="Ajustes" aria-label="Ajustes">⚙</button>
     </div>
   </header>
 
   <main>
-    <section class="painel" id="painelLembretes">
+    <!-- Início: núcleo, resumo do dia e conversa -->
+    <section class="centro aba" id="abaInicio" data-aba="inicio">
+      <button class="reator" id="reator" aria-label="Falar com o Jarvis">
+        <span class="anel a1"></span><span class="anel a2"></span>
+        <canvas class="nucleo-canvas" id="nucleo" aria-hidden="true"></canvas>
+      </button>
+      <div class="estado" id="estado">Toque no círculo e fale</div>
+      <div class="hoje" id="hoje" aria-label="Resumo de hoje"></div>
+
+      <div class="conversa" id="conversa" aria-live="polite"></div>
+
+      <div class="atalhos" id="atalhos" aria-label="Atalhos"></div>
+      <form class="entrada" id="formulario">
+        <label class="botao-sec botao-foto" title="Foto ou PDF: analisar documento ou anotar nota fiscal" aria-label="Enviar foto ou PDF">
+          ＋<input type="file" id="fotoNota" accept="image/*,application/pdf" hidden />
+        </label>
+        <input id="texto" autocomplete="off" placeholder="Digite ou fale com o Jarvis..." />
+        <button type="submit" class="botao">Enviar</button>
+      </form>
+    </section>
+
+    <!-- Agenda, lembretes e notas -->
+    <section class="painel aba" id="painelLembretes" data-aba="agenda">
       <div class="titulo"><h2>Agenda · hoje e amanhã</h2></div>
       <ul id="listaAgenda" class="lista"></ul>
       <button class="botao-sec botao-largo" id="botaoGoogle" hidden>Conectar Google Agenda</button>
@@ -50,25 +72,8 @@
       <ul id="listaNotas" class="lista"></ul>
     </section>
 
-    <section class="centro">
-      <button class="reator" id="reator" aria-label="Falar com o Jarvis">
-        <span class="anel a1"></span><span class="anel a2"></span>
-        <canvas class="nucleo-canvas" id="nucleo" aria-hidden="true"></canvas>
-      </button>
-      <div class="estado" id="estado">Toque no círculo e fale</div>
-
-      <div class="conversa" id="conversa" aria-live="polite"></div>
-
-      <form class="entrada" id="formulario">
-        <input id="texto" autocomplete="off" placeholder="Digite ou fale com o Jarvis..." />
-        <label class="botao-sec botao-foto" title="Foto ou PDF: analisar documento ou anotar nota fiscal" aria-label="Enviar foto ou PDF">
-          📷<input type="file" id="fotoNota" accept="image/*,application/pdf" hidden />
-        </label>
-        <button type="submit" class="botao">Enviar</button>
-      </form>
-    </section>
-
-    <section class="painel" id="painelFinancas">
+    <!-- Finanças pessoais -->
+    <section class="painel aba" id="painelFinancas" data-aba="financas">
       <div class="titulo"><h2>Finanças do mês</h2><button class="mais" data-rapido="transacao">+ Gasto/Ganho</button></div>
       <div class="kpis">
         <div class="kpi"><span>Entradas</span><strong id="kEntradas">R$ 0,00</strong></div>
@@ -79,7 +84,36 @@
       <div class="titulo"><h2>Últimas transações</h2></div>
       <ul id="listaTransacoes" class="lista"></ul>
     </section>
+
+    <!-- Porto e Toledo (somente leitura) -->
+    <section class="painel aba" id="painelToledo" data-aba="toledo">
+      <div class="titulo"><h2>Porto e Toledo</h2><button class="mais" id="atualizarToledo" type="button">↻ Atualizar</button></div>
+      <p class="nota-pc" id="statusToledo">Carregando...</p>
+      <div class="kpis" id="kpisToledo" hidden>
+        <div class="kpi"><span>Recebido no mês</span><strong id="tRecebido">R$ 0,00</strong><small id="tRecebidoDetalhe"></small></div>
+        <div class="kpi"><span>A receber no mês</span><strong id="tAReceber">R$ 0,00</strong></div>
+        <div class="kpi"><span>Em atraso</span><strong id="tAtraso">R$ 0,00</strong></div>
+        <div class="kpi"><span>Imóveis alugados</span><strong id="tOcupacao">0 de 0</strong></div>
+      </div>
+      <div id="listasToledo" hidden>
+        <div class="titulo"><h2>Em atraso</h2></div>
+        <ul id="listaAtrasos" class="lista"></ul>
+        <div class="titulo"><h2>Vence em 7 dias</h2></div>
+        <ul id="listaVencendo" class="lista"></ul>
+        <div class="titulo"><h2>Vendas de lotes</h2></div>
+        <ul id="listaLotes" class="lista"></ul>
+      </div>
+    </section>
   </main>
+
+  <!-- Abas (celular) -->
+  <nav class="abas" id="abas" aria-label="Seções">
+    <button type="button" data-ir="inicio"><i>🏠</i><span>Início</span></button>
+    <button type="button" data-ir="agenda"><i>📅</i><span>Agenda</span></button>
+    <button type="button" data-ir="financas"><i>💰</i><span>Finanças</span></button>
+    <button type="button" data-ir="toledo"><i>🏢</i><span>Toledo</span></button>
+    <button type="button" id="abaAjustes"><i>⚙️</i><span>Ajustes</span></button>
+  </nav>
 
   <!-- Cadastro rápido: salva direto, sem usar a IA -->
   <dialog id="dialogoRapido">
@@ -112,15 +146,18 @@
     </form>
   </dialog>
 
-  <!-- Ajustes: tema e voz -->
+  <!-- Ajustes -->
   <dialog id="dialogoAjustes">
     <form method="dialog">
       <h3>Ajustes</h3>
       <div class="campos">
+        <h4 class="secao">🎨 Aparência</h4>
         <label><span>Tema</span></label>
         <div class="temas" id="temas"></div>
         <label><span>Formato do núcleo</span></label>
         <div class="temas formatos" id="formatos"></div>
+
+        <h4 class="secao">🔊 Voz</h4>
         <label><span>Voz</span>
           <select id="escolhaVoz"><option value="">Automática</option></select>
         </label>
@@ -128,21 +165,28 @@
           <input type="range" id="velocidade" min="0.8" max="1.5" step="0.05" value="1.05" />
         </label>
         <button type="button" class="botao-sec" id="testarVoz">▶ Testar voz</button>
-        <label><span>Telegram (e Android Auto)</span></label>
-        <p class="nota-pc" id="statusTelegram">Verificando...</p>
-        <div class="linha">
-          <button type="button" class="botao-sec" id="conectarTelegram">Conectar Telegram</button>
-          <a class="botao-sec" id="abrirTelegram" target="_blank" rel="noopener noreferrer" hidden>Abrir o Telegram</a>
+
+        <h4 class="secao">🔌 Conexões</h4>
+        <div class="conexao"><b>Google Agenda</b><p class="nota-pc" id="statusGoogle">Verificando...</p></div>
+        <div class="conexao"><b>WhatsApp (avisos)</b><p class="nota-pc" id="statusWhatsapp">Verificando...</p></div>
+        <div class="conexao">
+          <b>Telegram (e Android Auto)</b>
+          <p class="nota-pc" id="statusTelegram">Verificando...</p>
+          <div class="linha">
+            <button type="button" class="botao-sec" id="conectarTelegram">Conectar Telegram</button>
+            <a class="botao-sec" id="abrirTelegram" target="_blank" rel="noopener noreferrer" hidden>Abrir o Telegram</a>
+          </div>
         </div>
-        <label><span>Instagram da Porto e Toledo</span></label>
-        <p class="nota-pc" id="statusInstagram">Verificando...</p>
-        <label><span>Computador (Jarvis PC)</span></label>
-        <p class="nota-pc" id="statusPc">Verificando...</p>
-        <div class="linha">
-          <button type="button" class="botao-sec" id="baixarPc">⬇ Baixar programa do PC</button>
-          <button type="button" class="botao-sec" id="testarPc">Testar conexão</button>
+        <div class="conexao"><b>Instagram da Porto e Toledo</b><p class="nota-pc" id="statusInstagram">Verificando...</p></div>
+        <div class="conexao">
+          <b>Computador (Jarvis PC)</b>
+          <p class="nota-pc" id="statusPc">Verificando...</p>
+          <div class="linha">
+            <button type="button" class="botao-sec" id="baixarPc">⬇ Baixar programa do PC</button>
+            <button type="button" class="botao-sec" id="testarPc">Testar conexão</button>
+          </div>
+          <button type="button" class="botao-sec" id="desconectarPc" hidden>Desconectar o PC</button>
         </div>
-        <button type="button" class="botao-sec" id="desconectarPc" hidden>Desconectar o PC</button>
       </div>
       <div class="acoes"><button class="botao">Pronto</button></div>
     </form>
