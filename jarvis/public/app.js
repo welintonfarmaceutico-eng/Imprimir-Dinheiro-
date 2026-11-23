@@ -11,6 +11,10 @@ const PALAVRA_CHAVE = /(?<!\p{L})(?:jarvis|járvis|jarvi|jarves|jarviz|jarbas|ja
 const PALAVRA_CHAVE_INICIO = /^\s*(?:chaves|xaves|chavis|charvis|chárvis)(?!\p{L})[,.!?\s]*/iu;
 const acharChamado = (frase) => PALAVRA_CHAVE.exec(frase) || PALAVRA_CHAVE_INICIO.exec(frase);
 const tirarChamado = (frase) => frase.replace(PALAVRA_CHAVE_INICIO, "").replace(PALAVRA_CHAVE, "");
+// Marcas de voz em inglês ([en]...[/en]) não aparecem na tela.
+const semMarcas = (t) => String(t ?? "").replace(/\[\/?en\]/gi, "");
+// Idioma da próxima escuta ("en-US" depois de tocar em "Responder em inglês").
+let idiomaDaEscuta = "";
 const moeda = (v) => Number(v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
 // ---------- Preferências guardadas no navegador ----------
@@ -158,7 +162,21 @@ async function tratarNaoAutorizado(dados, repetir) {
   return repetir();
 }
 
+// Perfil de quem está usando: "adulto" ou "estudante" (Modo Escola). As chamadas esperam saber o perfil.
+let perfil = "adulto";
+const PERMITIDOS_ESTUDANTE = new Set(["/api/perfil", "/api/conversa/limpar"]);
+let perfilPronto = null;
+function carregarPerfil() {
+  perfilPronto ||= fetch("/api/perfil", { headers: { "x-jarvis-senha": senha } })
+    .then((r) => (r.ok ? r.json() : { perfil: "adulto" }))
+    .then((d) => (perfil = d.perfil || "adulto"))
+    .catch(() => "adulto");
+  return perfilPronto;
+}
+
 async function api(caminho, opcoes = {}) {
+  if (caminho !== "/api/perfil") await carregarPerfil();
+  if (perfil === "estudante" && !PERMITIDOS_ESTUDANTE.has(caminho)) throw Object.assign(new Error("Indisponível no Modo Escola."), { silencioso: true });
   const resp = await fetch(caminho, {
     ...opcoes,
     headers: { "Content-Type": "application/json", "x-jarvis-senha": senha, ...(opcoes.headers || {}) },
@@ -229,11 +247,11 @@ async function enviar(texto, anexo = null) {
         if (!bolha) { bolha = adicionarMensagem("", "jarvis digitando"); definirEstado("falando", "Respondendo..."); }
         escrito += evento.delta;
         paraFalar += evento.delta;
-        bolha.textContent = escrito;
+        bolha.textContent = semMarcas(escrito);
         el.conversa.scrollTop = el.conversa.scrollHeight;
         falarFrasesProntas();
       } else if (evento.tipo === "fim") {
-        if (!escrito.trim()) { bolha = adicionarMensagem(evento.texto, "jarvis"); paraFalar = evento.texto; }
+        if (!escrito.trim()) { bolha = adicionarMensagem(semMarcas(evento.texto), "jarvis"); paraFalar = evento.texto; }
         falarFrasesProntas(true);
         mostrarBotoes(evento.botoes);
         mostrarPosts(evento.posts);
@@ -279,12 +297,28 @@ const falando = {
       || vozes.find((v) => /pt-br/i.test(v.lang) && /google|natural|online/i.test(v.name))
       || vozes.find((v) => /pt-br/i.test(v.lang)) || vozes[0] || null;
   },
-  // Põe uma frase na fila de fala (o navegador fala uma depois da outra).
+  emIngles: false, // dentro de um trecho [en]...[/en]
+  vozIngles() {
+    const vozes = "speechSynthesis" in window ? speechSynthesis.getVoices() : [];
+    return vozes.find((v) => /^en-us/i.test(v.lang) && /natural|online|google/i.test(v.name))
+      || vozes.find((v) => /^en-us/i.test(v.lang)) || vozes.find((v) => /^en/i.test(v.lang)) || null;
+  },
+  // Põe uma frase na fila de fala. Trechos entre [en] e [/en] são falados com voz em inglês.
   enfileirar(texto) {
-    if (!el.voz.checked || !("speechSynthesis" in window) || !texto?.trim()) return;
+    if (!texto) return;
+    for (const parte of String(texto).split(/(\[\/?en\])/i)) {
+      if (/^\[en\]$/i.test(parte)) this.emIngles = true;
+      else if (/^\[\/en\]$/i.test(parte)) this.emIngles = false;
+      else this.falarTrecho(parte, this.emIngles);
+    }
+  },
+  falarTrecho(texto, ingles) {
+    texto = String(texto ?? "").replace(/^[\s.,;:!?…]+/, ""); // pontuação solta no começo de um trecho
+    if (!el.voz.checked || !("speechSynthesis" in window) || !/[\p{L}\p{N}]/u.test(texto)) return;
     const fala = new SpeechSynthesisUtterance(texto.trim());
-    fala.lang = "pt-BR";
-    if (this.voz) fala.voice = this.voz;
+    fala.lang = ingles ? "en-US" : "pt-BR";
+    const voz = ingles ? this.vozIngles() : this.voz;
+    if (voz) fala.voice = voz;
     fala.rate = this.velocidade;
     fala.onstart = () => definirEstado("falando");
     fala.onboundary = () => pulsar(1.2);
@@ -303,6 +337,7 @@ const falando = {
   falar(texto) { this.enfileirar(texto); return this.terminar(); },
   cancelar() {
     if ("speechSynthesis" in window) speechSynthesis.cancel();
+    this.emIngles = false;
     this.pendentes = 0;
     this.aoTerminar.splice(0).forEach((f) => f());
   },
@@ -348,7 +383,7 @@ function processarFrase(frase) {
 
 function criarReconhecimento() {
   const r = new Reconhecimento();
-  r.lang = "pt-BR";
+  r.lang = idiomaDaEscuta || "pt-BR";
   r.interimResults = true;
   r.continuous = el.escuta.checked;
 
@@ -391,6 +426,7 @@ function criarReconhecimento() {
   r.onend = () => {
     clearTimeout(pausaTimer);
     ouvindo = false;
+    idiomaDaEscuta = ""; // "Responder em inglês" vale só para uma resposta
     // Parou pela pausa e o navegador não entregou a frase final: usa o que já tinha ouvido.
     if (paradoPorPausa && parcialPendente) {
       const frase = parcialPendente;
@@ -969,20 +1005,7 @@ const ATALHOS = [
   { rotulo: "🏢 Resumo Toledo", enviar: "Me dá um resumo da Porto e Toledo" },
   { rotulo: "💰 Gastos do mês", enviar: "Como estão meus gastos este mês?" },
 ];
-for (const a of ATALHOS) {
-  const b = document.createElement("button");
-  b.type = "button";
-  b.className = "atalho";
-  b.textContent = a.rotulo;
-  b.addEventListener("click", () => {
-    if (a.acao === "arquivo") return $("fotoNota").click();
-    if (a.enviar) return enviar(a.enviar);
-    el.texto.value = a.texto;
-    el.texto.focus();
-    el.texto.setSelectionRange(a.texto.length, a.texto.length);
-  });
-  $("atalhos").appendChild(b);
-}
+montarAtalhos(ATALHOS);
 
 // ---------- Resumo de hoje (topo do Início) ----------
 async function atualizarHoje() {
@@ -1057,3 +1080,62 @@ $("botaoAjustes").addEventListener("click", atualizarConexoes);
 
 // Abre na última aba usada (depois de tudo carregado).
 irPara(guardar.ler("jarvis.aba", "inicio"));
+
+// ---------- Modo Escola (senha da estudante): só o professor, com atalhos de matérias ----------
+const ATALHOS_ESCOLA = [
+  { rotulo: "📷 Foto do dever", acao: "arquivo" },
+  { rotulo: "📐 Matemática", texto: "Me ajuda em matemática: " },
+  { rotulo: "📖 Português", texto: "Me ajuda em português: " },
+  { rotulo: "🇺🇸 Inglês", enviar: "Vamos treinar inglês?" },
+  { rotulo: "🎤 Responder em inglês", acao: "ingles" },
+  { rotulo: "🔬 Ciências", texto: "Me ajuda em ciências: " },
+  { rotulo: "🌎 História e Geografia", texto: "Me ajuda em história e geografia: " },
+  { rotulo: "🎯 Quiz", enviar: "Vamos fazer um quiz divertido sobre o que eu estou estudando!" },
+];
+function montarAtalhos(lista) {
+  const caixa = $("atalhos");
+  caixa.replaceChildren();
+  for (const a of lista) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "atalho";
+    b.textContent = a.rotulo;
+    b.addEventListener("click", () => {
+      if (a.acao === "arquivo") return $("fotoNota").click();
+      if (a.acao === "ingles") {
+        // A próxima fala é entendida em inglês (para responder ao professor em inglês).
+        pararDeOuvir();
+        idiomaDaEscuta = "en-US";
+        esperandoComando = true;
+        comecarAOuvir();
+        definirEstado("ouvindo", "Fale em inglês...");
+        return;
+      }
+      if (a.enviar) return enviar(a.enviar);
+      el.texto.value = a.texto;
+      el.texto.focus();
+      el.texto.setSelectionRange(a.texto.length, a.texto.length);
+    });
+    caixa.appendChild(b);
+  }
+}
+
+carregarPerfil().then(() => {
+  if (perfil !== "estudante") return;
+  document.body.dataset.perfil = "estudante";
+  montarAtalhos(ATALHOS_ESCOLA);
+  $("notaFoto").hidden = true;
+  $("perguntaFoto").placeholder = "Ex.: me ajuda nesse exercício de frações?";
+  el.texto.placeholder = "Pergunte ao professor Jarvis...";
+  el.conversa.replaceChildren();
+  adicionarMensagem("Oi! Eu sou o Jarvis, seu professor particular. Vamos estudar? Você pode mandar a foto do dever, pedir ajuda em qualquer matéria ou treinar inglês comigo!", "jarvis");
+});
+// Garante que o diálogo de arquivo não ofereça "Anotar gasto" no Modo Escola.
+$("fotoNota").addEventListener("change", () => { if (perfil === "estudante") $("notaFoto").hidden = true; });
+
+// Trocar de pessoa (adulto ou Modo Escola): esquece a senha salva neste aparelho.
+$("sairJarvis").addEventListener("click", () => {
+  guardar.escrever("jarvis.senha", "");
+  guardar.escrever("jarvis.conversa", "");
+  location.reload();
+});

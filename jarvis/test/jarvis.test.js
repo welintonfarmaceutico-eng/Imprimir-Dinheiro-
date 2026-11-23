@@ -1168,3 +1168,52 @@ test("rotas: resumo de hoje e painel da Porto e Toledo", async () => {
     delete process.env.TOLEDO_URL; delete process.env.TOLEDO_TOKEN;
   }
 });
+
+// ---------- Modo Escola (senha da estudante) ----------
+test("modo escola: senha da estudante só conversa com o professor; o resto é bloqueado", async () => {
+  const armazem = new ArmazemBlobs(blobsFalso());
+  const cliente = clienteFalso([
+    { stop_reason: "end_turn", content: [{ type: "text", text: "Vamos lá! Gato em inglês é [en]cat[/en]." }] },
+    { stop_reason: "end_turn", content: [{ type: "text", text: "Oi, adulto." }] },
+  ]);
+  const tratar = criarJarvis(armazem, { senha: "pai123", senhaEstudante: "filha10", cliente });
+  const pedir = (m, c, s, corpo) => tratar(new Request(`http://x${c}`, { method: m, headers: { "x-jarvis-senha": s }, body: m === "GET" ? undefined : corpo && JSON.stringify(corpo) }));
+
+  assert.deepEqual(await (await pedir("GET", "/api/perfil", "filha10")).json(), { perfil: "estudante" });
+  assert.deepEqual(await (await pedir("GET", "/api/perfil", "pai123")).json(), { perfil: "adulto" });
+  assert.equal((await pedir("GET", "/api/perfil", "errada")).status, 401);
+
+  // Tudo o que é do adulto fica bloqueado para a estudante.
+  for (const [m, c] of [["GET", "/api/painel"], ["GET", "/api/toledo/painel"], ["GET", "/api/hoje"], ["POST", "/api/transacoes"], ["POST", "/api/nota-fiscal"],
+    ["POST", "/api/conversar"], ["GET", "/api/pc/instalador"], ["POST", "/api/whatsapp/teste"], ["POST", "/api/telegram/conectar"], ["GET", "/api/lembretes/vencidos"]]) {
+    assert.equal((await pedir(m, c, "filha10", {})).status, 403, `${m} ${c} deveria estar bloqueado`);
+  }
+
+  // A conversa da estudante usa o professor, sem ferramentas do adulto.
+  const texto = await (await pedir("POST", "/api/conversar/ao-vivo", "filha10", { conversa: "c1", texto: "como fala gato em inglês?" })).text();
+  assert.match(texto, /\[en\]cat\[\/en\]/);
+  const p = cliente.pedidos[0];
+  assert.match(p.system, /Modo Escola/);
+  assert.match(p.system, /Não entregue a resposta pronta/);
+  assert.deepEqual(p.tools.map((t) => t.name), ["web_search", "documento_pronto"]);
+  assert.ok(await armazem.obter("conversas", "escola-c1"), "conversa da escola fica separada");
+
+  // O adulto continua com tudo.
+  await (await pedir("POST", "/api/conversar/ao-vivo", "pai123", { conversa: "c1", texto: "oi" })).text();
+  assert.match(cliente.pedidos[1].system, /assistente pessoal/);
+  assert.ok(cliente.pedidos[1].tools.some((t) => t.name === "registrar_transacao"));
+  assert.equal((await pedir("GET", "/api/painel", "pai123")).status, 200);
+});
+
+test("modo escola: sem senha da estudante configurada, só a senha do adulto entra", async () => {
+  const tratar = criarJarvis(new ArmazemBlobs(blobsFalso()), { senha: "pai123", senhaEstudante: "" });
+  const r = await tratar(new Request("http://x/api/perfil", { headers: { "x-jarvis-senha": "" } }));
+  assert.equal(r.status, 401);
+});
+
+test("telegram: marcas de voz em inglês não aparecem na mensagem", async () => {
+  const tg = telegramFalso();
+  const telegram = new Telegram(new ArmazemBlobs(blobsFalso()), { fetch: tg.f, env: { TELEGRAM_BOT_TOKEN: "1:X" } });
+  await telegram.enviar(1, "Gato em inglês é [en]cat[/en].");
+  assert.equal(tg.enviadas().at(-1).text, "Gato em inglês é cat.");
+});

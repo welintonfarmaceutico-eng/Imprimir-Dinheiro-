@@ -4,8 +4,8 @@ import crypto from "node:crypto";
 import Anthropic from "@anthropic-ai/sdk";
 import { Banco } from "./db.js";
 import { inicioDoDia } from "./fuso.js";
-import { criarFerramentas } from "./ferramentas.js";
-import { Cerebro } from "./cerebro.js";
+import { criarFerramentas, criarFerramentasEstudante } from "./ferramentas.js";
+import { Cerebro, promptEstudante } from "./cerebro.js";
 import { GoogleAgenda } from "./google.js";
 import { WhatsApp, enviarLembretesVencidos } from "./whatsapp.js";
 import { Computador } from "./computador.js";
@@ -52,7 +52,7 @@ export function explicarErro(erro) {
   return { mensagem: "Tive um problema para pensar agora. Tente de novo em instantes." };
 }
 
-export function criarJarvis(armazem, { senha = process.env.JARVIS_SENHA || "", cliente = null, computadorOpcoes = {}, telegramOpcoes = {} } = {}) {
+export function criarJarvis(armazem, { senha = process.env.JARVIS_SENHA || "", senhaEstudante = process.env.JARVIS_SENHA_ESTUDANTE || "", cliente = null, computadorOpcoes = {}, telegramOpcoes = {} } = {}) {
   definirFuso();
   const banco = new Banco(armazem);
   const agenda = new GoogleAgenda(armazem);
@@ -63,13 +63,21 @@ export function criarJarvis(armazem, { senha = process.env.JARVIS_SENHA || "", c
   const telegram = new Telegram(armazem, telegramOpcoes);
   const instagram = new Instagram(armazem);
   const cerebro = new Cerebro(criarFerramentas(banco, agenda, whatsapp, computador, toledo, clima, instagram), banco);
-  if (cliente) cerebro.cliente = cliente; // só nos testes
+  // Modo Escola: professor particular, sem nenhuma ferramenta do adulto (finanças, Toledo, PC, WhatsApp...).
+  const cerebroEstudante = new Cerebro(criarFerramentasEstudante(), banco, { sistema: promptEstudante() });
+  if (cliente) cerebro.cliente = cerebroEstudante.cliente = cliente; // só nos testes
 
-  function autorizado(req) {
-    if (!senha) return true;
-    const enviada = Buffer.from(req.headers.get("x-jarvis-senha") || "");
-    const certa = Buffer.from(senha);
-    return enviada.length === certa.length && crypto.timingSafeEqual(enviada, certa);
+  const confere = (enviada, certa) => {
+    const a = Buffer.from(enviada), b = Buffer.from(certa);
+    return a.length === b.length && crypto.timingSafeEqual(a, b);
+  };
+  // Quem está usando: "adulto" (senha do Jarvis), "estudante" (senha do Modo Escola) ou ninguém.
+  function perfil(req) {
+    const enviada = req.headers.get("x-jarvis-senha") || "";
+    if (!senha) return "adulto";
+    if (confere(enviada, senha)) return "adulto";
+    if (senhaEstudante && confere(enviada, senhaEstudante)) return "estudante";
+    return null;
   }
 
   async function corpo(req) {
@@ -96,7 +104,7 @@ export function criarJarvis(armazem, { senha = process.env.JARVIS_SENHA || "", c
   }
 
   // Mesma conversa, mas a resposta vai chegando em tempo real (Server-Sent Events).
-  async function conversarAoVivo(req) {
+  async function conversarAoVivo(req, cer = cerebro, prefixo = "") {
     const { conversa, texto: textoEnviado, aparelho, imagem, tipo } = await corpo(req);
     const anexo = imagem ? { imagem, tipo } : null;
     const texto = typeof textoEnviado === "string" && textoEnviado.trim() ? textoEnviado : anexo ? "Analise este documento e me oriente." : "";
@@ -111,7 +119,7 @@ export function criarJarvis(armazem, { senha = process.env.JARVIS_SENHA || "", c
       async start(controle) {
         const enviar = (evento) => controle.enqueue(codificador.encode(`data: ${JSON.stringify(evento)}\n\n`));
         try {
-          const r = await cerebro.conversar(conversa, texto.trim().slice(0, 4000), (delta) => enviar({ tipo: "texto", delta }), { aparelho, anexo });
+          const r = await cer.conversar(prefixo + conversa, texto.trim().slice(0, 4000), (delta) => enviar({ tipo: "texto", delta }), { aparelho, anexo });
           enviar({ tipo: "fim", ...r });
         } catch (erro) {
           console.error(erro);
@@ -239,7 +247,19 @@ export function criarJarvis(armazem, { senha = process.env.JARVIS_SENHA || "", c
       }
     }
 
-    if (!autorizado(req)) return json({ erro: "Senha incorreta" }, 401);
+    const quem = perfil(req);
+    if (!quem) return json({ erro: "Senha incorreta" }, 401);
+    if (rota === "GET /api/perfil") return json({ perfil: quem });
+    if (quem === "estudante") {
+      // Modo Escola: só a conversa com o professor (com foto do exercício). O resto é bloqueado.
+      if (rota === "POST /api/conversar/ao-vivo") return conversarAoVivo(req, cerebroEstudante, "escola-");
+      if (rota === "POST /api/conversa/limpar") {
+        const { conversa } = await corpo(req);
+        if (typeof conversa === "string" && ID_VALIDO.test(conversa)) await cerebroEstudante.limpar("escola-" + conversa);
+        return json({ ok: true });
+      }
+      return json({ erro: "Disponível só no modo adulto." }, 403);
+    }
 
     switch (rota) {
       case "POST /api/conversar":
