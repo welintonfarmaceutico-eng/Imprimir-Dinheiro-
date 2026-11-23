@@ -302,3 +302,7 @@ dialog h3 { font-family: "Orbitron", sans-serif; font-size: 15px; letter-spacing
 /* Post do Instagram pronto para copiar */
 .post-instagram { display: grid; gap: 8px; }
 .post-instagram .post-texto { white-space: pre-wrap; padding: 8px 10px; border-radius: 8px; background: rgba(var(--acento-rgb), .08); user-select: text; }
+
+/* Diálogo do 📷 (analisar documento ou anotar nota) */
+.acoes-foto { flex-wrap: wrap; }
+#perguntaFoto { width: 100%; resize: vertical; }

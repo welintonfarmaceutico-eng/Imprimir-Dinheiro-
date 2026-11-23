@@ -126,6 +126,10 @@ Todo dia, às 7h (ou na hora de `JARVIS_RESUMO_HORA`), chega no WhatsApp um resu
 
 Toque no 📷 ao lado do "Enviar" e tire a foto da nota, cupom ou recibo. O Jarvis lê o valor total, a loja, a data e escolhe a categoria, e anota o gasto sozinho. Se ler errado, toque em "Desfazer". Cada foto gasta alguns centavos de crédito da Anthropic (a foto é reduzida no aparelho antes de ser enviada).
 
+### Analisar documento por foto ou PDF
+
+No 📷, escolha uma foto ou um PDF (até 5 MB) e toque em **Analisar documento**, com uma pergunta se quiser ("esse contrato está bom?", "essa receita tem interação?"). O Jarvis diz o que é o documento, os pontos importantes (partes, valores, datas, prazos), os riscos e o que fazer, usando o especialista certo (advogado, farmacêutico, contador ou corretor). No Telegram: foto com legenda ou PDF viram análise; foto sem legenda tenta ser nota fiscal e, se não for, vira análise. A foto não fica guardada no histórico.
+
 ### Lembretes que se repetem
 
 "Me lembra de tomar o remédio todo dia às 8h", "de segunda a sexta às 7h", "toda segunda" ou "todo dia 10". Cinco minutos depois de cada aviso, o lembrete passa para a próxima vez. Para parar, peça para concluir o lembrete. No botão "+ Lembrete" também tem a opção "Repetir".

@@ -173,13 +173,13 @@ async function conversarAoVivo(corpo, aoEvento) {
 }
 
 let ocupado = false;
-async function enviar(texto) {
+async function enviar(texto, anexo = null) {
   texto = texto.trim();
-  if (!texto || ocupado) return;
+  if ((!texto && !anexo) || ocupado) return;
   ocupado = true;
   pararDeOuvir();
   falando.cancelar();
-  adicionarMensagem(texto, "usuario");
+  adicionarMensagem(anexo ? `📄 ${anexo.nome}${texto ? `\n${texto}` : ""}` : texto, "usuario");
   definirEstado("pensando");
 
   let bolha = null;
@@ -197,7 +197,9 @@ async function enviar(texto) {
   };
 
   try {
-    await conversarAoVivo({ conversa: conversaId, texto, aparelho: APARELHO }, (evento) => {
+    const corpoPedido = { conversa: conversaId, texto, aparelho: APARELHO };
+    if (anexo) { corpoPedido.imagem = anexo.imagem; corpoPedido.tipo = anexo.tipo; definirEstado("pensando", "Lendo o documento..."); }
+    await conversarAoVivo(corpoPedido, (evento) => {
       if (evento.tipo === "texto") {
         if (!bolha) { bolha = adicionarMensagem("", "jarvis digitando"); definirEstado("falando", "Respondendo..."); }
         escrito += evento.delta;
@@ -794,10 +796,51 @@ async function prepararFoto(arquivo, lado = 1600) {
   return tela.toDataURL("image/jpeg", 0.85).split(",")[1];
 }
 
-$("fotoNota").addEventListener("change", async (e) => {
+// Arquivo escolhido no 📷: pergunta se é para analisar o documento ou anotar a nota fiscal.
+let arquivoEscolhido = null;
+$("fotoNota").addEventListener("change", (e) => {
   const arquivo = e.target.files?.[0];
-  e.target.value = ""; // permite mandar a mesma foto de novo
+  e.target.value = ""; // permite mandar o mesmo arquivo de novo
   if (!arquivo || ocupado) return;
+  arquivoEscolhido = arquivo;
+  const pdf = arquivo.type === "application/pdf";
+  $("nomeArquivo").textContent = `${pdf ? "📄" : "🖼️"} ${arquivo.name || "foto"}`;
+  $("notaFoto").hidden = pdf;
+  $("perguntaFoto").value = "";
+  $("dialogoFoto").showModal();
+});
+$("cancelarFoto").addEventListener("click", () => $("dialogoFoto").close());
+
+async function lerArquivo(arquivo) {
+  if (arquivo.type === "application/pdf") {
+    if (arquivo.size > 5 * 1024 * 1024) throw new Error("O PDF é grande demais (máximo 5 MB).");
+    const dados = await new Promise((ok, falha) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = falha; r.readAsDataURL(arquivo); });
+    return { imagem: String(dados).split(",")[1], tipo: "application/pdf" };
+  }
+  return { imagem: await prepararFoto(arquivo, 2000), tipo: "image/jpeg" }; // documento: um pouco maior, para ler letra pequena
+}
+
+$("analisarFoto").addEventListener("click", async () => {
+  const arquivo = arquivoEscolhido;
+  const pergunta = $("perguntaFoto").value;
+  $("dialogoFoto").close();
+  if (!arquivo) return;
+  try {
+    const anexo = await lerArquivo(arquivo);
+    await enviar(pergunta, { ...anexo, nome: arquivo.type === "application/pdf" ? (arquivo.name || "documento.pdf") : "Foto de documento" });
+  } catch (erro) {
+    adicionarMensagem(erro.message, "jarvis erro");
+  }
+});
+
+$("notaFoto").addEventListener("click", () => {
+  const arquivo = arquivoEscolhido;
+  $("dialogoFoto").close();
+  if (arquivo) anotarNotaFiscal(arquivo);
+});
+
+async function anotarNotaFiscal(arquivo) {
+  if (ocupado) return;
   ocupado = true;
   pararDeOuvir();
   adicionarMensagem("📷 Foto de nota fiscal", "usuario");
@@ -826,7 +869,8 @@ $("fotoNota").addEventListener("change", async (e) => {
     definirEstado(null);
     if (el.escuta.checked) comecarAOuvir();
   }
-});
+}
+
 
 // ---------- Telegram (conversar pelo Telegram e pelo Android Auto) ----------
 async function atualizarTelegram() {

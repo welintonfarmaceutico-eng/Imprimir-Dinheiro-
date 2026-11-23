@@ -1,6 +1,7 @@
 // O "cérebro" do Jarvis: conversa com o Claude e executa as ferramentas.
 import { formatar, fuso, isoLocal } from "./fuso.js";
 import Anthropic from "@anthropic-ai/sdk";
+import { validarImagem } from "./notaFiscal.js";
 
 const MODELO = process.env.JARVIS_MODELO || "claude-opus-5-5";
 const ESFORCO = process.env.JARVIS_ESFORCO || "low"; // low = respostas rápidas para voz
@@ -21,7 +22,7 @@ O que você sabe fazer:
 - Pesquisar na internet (notícias, cotações, clima, preços e fatos recentes) com a ferramenta de busca. Diga de onde veio a informação quando for útil.
 - Guardar e consultar anotações.
 - Criar, listar e concluir lembretes, inclusive os que se repetem (todo dia, de segunda a sexta, toda semana, todo mês). Eles são avisados em voz alta e no WhatsApp.
-- Controle financeiro: registrar gastos e ganhos, listar transações e fazer resumos do mês. Para nota fiscal, cupom ou recibo, o usuário toca no botão da câmera ao lado do "Enviar" e tira a foto: o gasto é anotado sozinho (com "Desfazer" se ler errado).
+- Controle financeiro: registrar gastos e ganhos, listar transações e fazer resumos do mês. Pelo botão da câmera ao lado do "Enviar" (ou mandando no Telegram), o usuário envia foto ou PDF: pode anotar uma nota fiscal como gasto (com "Desfazer") ou pedir a análise de qualquer documento.
 - WhatsApp: os lembretes também chegam no WhatsApp do usuário, se estiver configurado, e você pode mandar mensagens para ele quando ele pedir.
 - Computador do usuário: abrir programas, abrir sites e controlar o volume, pela ferramenta computador. Se o PC não responder, diga que ele pode estar desligado ou com o programa Jarvis PC fechado.
 - Google Agenda: consultar, criar e apagar compromissos. Se a agenda não estiver conectada, explique que é só tocar em "Conectar Google Agenda" na tela.
@@ -40,6 +41,14 @@ Orientação jurídica (quando a pergunta for de Direito):
 - Nesses casos pode falar um pouco mais: até umas 8 frases, em linguagem simples, sem juridiquês.
 - Termine com uma frase curta: é uma orientação geral; para entrar com ação na Justiça, assinar algo de alto valor ou em caso de prazo correndo, vale confirmar com um advogado inscrito na OAB.
 - Quando pedirem um documento (notificação extrajudicial, contrato de locação, distrato, recibo, termo de acordo, procuração simples, carta de cobrança), redija completo com a ferramenta documento_pronto, com campos como [nome do inquilino] onde faltar dado. Não leia o documento em voz alta: diga só que está na tela.
+
+Foto ou PDF de documento (quando vier um documento anexado):
+- Leia com atenção e diga primeiro o que é o documento, em uma frase. Depois, os pontos importantes: quem são as partes, valores, datas, prazos e obrigações.
+- Aponte riscos, cláusulas abusivas ou estranhas, erros e o que está faltando, usando o especialista certo: contrato, notificação ou documento de imóvel como advogado; receita, exame ou bula como farmacêutico; boleto, imposto ou extrato como contador; avaliação ou anúncio de imóvel como corretor.
+- Termine com o que a pessoa deve fazer agora. Se ela fez uma pergunta junto, responda a pergunta.
+- Se a foto estiver ilegível ou cortada, diga o que não deu para ler e peça outra foto.
+- Pode falar um pouco mais que o normal (até umas 10 frases). Se ajudar, ofereça uma resposta ou documento pronto (documento_pronto).
+- Se for nota fiscal ou cupom e o usuário não pedir outra coisa, registre o gasto com registrar_transacao.
 
 Farmacêutico e saúde (quando a pergunta for sobre medicamentos, saúde ou farmácia):
 - O usuário é farmacêutico: responda no nível técnico de um colega farmacêutico clínico experiente, com nomes genéricos e de referência, classe terapêutica, mecanismo de ação, posologia (adulto, pediátrica em mg/kg, ajuste renal e hepático), interações (gravidade e conduta), contraindicações, gestação e lactação, reações adversas e alertas.
@@ -106,18 +115,32 @@ export class Cerebro {
   }
 
   // Envia uma mensagem e devolve { texto, acoes }. Com "aoTexto", o texto vai chegando em tempo real.
-  async conversar(id, textoUsuario, aoTexto = null, { aparelho = "" } = {}) {
+  async conversar(id, textoUsuario, aoTexto = null, { aparelho = "", anexo = null } = {}) {
     // Conversas antigas podem ter o marcador técnico gravado: limpa antes de mandar de novo.
     const mensagens = (await this.banco.obterConversa(id)).map((m) => (m.role === "assistant" ? { ...m, content: limparMarcadores(m.content) } : m));
     const ondeEsta = aparelho === "celular" || aparelho === "computador" ? ` [Aparelho: ${aparelho}]` : "";
-    mensagens.push({ role: "user", content: `[Agora: ${this.agora()}]${ondeEsta}\n${textoUsuario}` });
+    const textoComHora = `[Agora: ${this.agora()}]${ondeEsta}\n${textoUsuario}`;
+    if (anexo) {
+      // Foto ou PDF de documento: vai junto com a pergunta só nesta vez (no histórico fica um aviso).
+      validarImagem(anexo, { aceitarPdf: true });
+      const bloco = anexo.tipo === "application/pdf"
+        ? { type: "document", source: { type: "base64", media_type: "application/pdf", data: anexo.imagem } }
+        : { type: "image", source: { type: "base64", media_type: anexo.tipo, data: anexo.imagem } };
+      mensagens.push({ role: "user", content: [bloco, { type: "text", text: `${textoComHora}\n[Documento anexado]` }] });
+    } else {
+      mensagens.push({ role: "user", content: textoComHora });
+    }
     const acoes = []; // ferramentas usadas, para a interface atualizar os painéis
     const botoes = []; // botões para abrir apps e sites no aparelho do usuário
     const posts = []; // posts do Instagram prontos para copiar
 
     // Só grava o histórico quando a resposta termina bem; erros e recusas não deixam nada pela metade.
     const concluir = async (texto) => {
-      await this.banco.salvarConversa(id, mensagens);
+      // A foto não fica guardada (é grande e sairia cara em toda pergunta seguinte): fica só um aviso.
+      const semAnexos = mensagens.map((m) => (m.role === "user" && Array.isArray(m.content)
+        ? { ...m, content: m.content.map((b) => (b.type === "image" || b.type === "document" ? { type: "text", text: "[O usuário enviou um documento; a análise está na resposta seguinte.]" } : b)) }
+        : m));
+      await this.banco.salvarConversa(id, semAnexos);
       return { texto, acoes, botoes, posts };
     };
 

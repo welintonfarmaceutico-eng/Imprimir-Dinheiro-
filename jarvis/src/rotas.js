@@ -11,7 +11,7 @@ import { WhatsApp, enviarLembretesVencidos } from "./whatsapp.js";
 import { Computador } from "./computador.js";
 import { enviarRelatorioMensal, enviarResumoDiario, montarResumo } from "./resumo.js";
 import { Clima } from "./clima.js";
-import { registrarNotaFiscal } from "./notaFiscal.js";
+import { registrarNotaFiscal, validarImagem } from "./notaFiscal.js";
 import { Telegram } from "./telegram.js";
 import { Instagram } from "./instagram.js";
 import { Toledo } from "./toledo.js";
@@ -97,16 +97,21 @@ export function criarJarvis(armazem, { senha = process.env.JARVIS_SENHA || "", c
 
   // Mesma conversa, mas a resposta vai chegando em tempo real (Server-Sent Events).
   async function conversarAoVivo(req) {
-    const { conversa, texto, aparelho } = await corpo(req);
-    if (typeof conversa !== "string" || !ID_VALIDO.test(conversa) || typeof texto !== "string" || !texto.trim()) {
+    const { conversa, texto: textoEnviado, aparelho, imagem, tipo } = await corpo(req);
+    const anexo = imagem ? { imagem, tipo } : null;
+    const texto = typeof textoEnviado === "string" && textoEnviado.trim() ? textoEnviado : anexo ? "Analise este documento e me oriente." : "";
+    if (typeof conversa !== "string" || !ID_VALIDO.test(conversa) || !texto.trim()) {
       return json({ erro: "Envie 'conversa' e 'texto'." }, 400);
+    }
+    if (anexo) {
+      try { validarImagem(anexo, { aceitarPdf: true }); } catch (erro) { return json({ erro: erro.message }, 400); }
     }
     const codificador = new TextEncoder();
     const fluxo = new ReadableStream({
       async start(controle) {
         const enviar = (evento) => controle.enqueue(codificador.encode(`data: ${JSON.stringify(evento)}\n\n`));
         try {
-          const r = await cerebro.conversar(conversa, texto.trim().slice(0, 4000), (delta) => enviar({ tipo: "texto", delta }), { aparelho });
+          const r = await cerebro.conversar(conversa, texto.trim().slice(0, 4000), (delta) => enviar({ tipo: "texto", delta }), { aparelho, anexo });
           enviar({ tipo: "fim", ...r });
         } catch (erro) {
           console.error(erro);
@@ -205,7 +210,7 @@ export function criarJarvis(armazem, { senha = process.env.JARVIS_SENHA || "", c
       };
       try {
         await telegram.processar(atualizacao, {
-          conversar: comAviso((conversa, texto) => cerebro.conversar(conversa, texto.slice(0, 4000), null, { aparelho: "celular" })),
+          conversar: comAviso((conversa, texto, anexo = null) => cerebro.conversar(conversa, texto.slice(0, 4000), null, { aparelho: "celular", anexo })),
           notaFiscal: comAviso((foto) => registrarNotaFiscal(cerebro.cliente, banco, foto)),
         });
       } catch (erro) {
