@@ -1067,3 +1067,15 @@ test("telegram: documento longo vai em partes, cortando em quebra de linha", asy
   assert.match(enviadas[1].text, /^Contrato de locação\n\nCláusula 1:/);
   assert.ok(enviadas.length >= 3, "o documento foi dividido");
 });
+
+test("especialistas: farmacêutico, contador e corretor estão nas instruções", () => {
+  const banco = novoBanco();
+  const { sistema } = new Cerebro(criarFerramentas(banco), banco);
+  assert.match(sistema, /usuário é farmacêutico/);
+  assert.match(sistema, /Portaria 344\/98/);
+  assert.match(sistema, /carnê-leão/);
+  assert.match(sistema, /ganho de capital/);
+  assert.match(sistema, /CRC/);
+  assert.match(sistema, /IGP-M ou IPCA/);
+  assert.match(sistema, /CRECI/);
+});
