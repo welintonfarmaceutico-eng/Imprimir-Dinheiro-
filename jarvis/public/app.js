@@ -150,16 +150,28 @@ function adicionarMeta(bolha, tipo) {
 }
 
 // ---------- Comunicação com o servidor ----------
-async function tratarNaoAutorizado(dados, repetir) {
-  // 401 sem a nossa mensagem = bloqueio do login do Netlify (sessão expirada).
+// A senha é pedida uma vez só, mesmo quando várias partes da tela carregam juntas.
+// Digitou: guarda e recarrega a página (assim tudo carrega já com a senha e o perfil certos).
+// Cancelou: não pergunta de novo até recarregar a página.
+let pedidoDeSenha = null;
+let avisouSemSenha = false;
+async function tratarNaoAutorizado(dados) {
+  // 401 sem a nossa mensagem = bloqueio de login externo (sessão expirada).
   if (dados.erro !== "Senha incorreta") {
-    throw new Error("Seu login expirou. Recarregue a página e entre de novo na sua conta do Netlify.");
+    throw new Error("Seu login expirou. Recarregue a página e entre de novo.");
   }
-  const nova = prompt("Senha do Jarvis:");
-  if (nova === null) throw new Error("Senha necessária.");
-  senha = nova;
-  guardar.escrever("jarvis.senha", senha);
-  return repetir();
+  pedidoDeSenha ||= Promise.resolve().then(() => prompt(senha ? "Senha incorreta. Digite a senha do Jarvis:" : "Senha do Jarvis:"));
+  const nova = await pedidoDeSenha;
+  if (nova === null || !nova.trim()) {
+    if (!avisouSemSenha) {
+      avisouSemSenha = true;
+      adicionarMensagem("Sem a senha o Jarvis não consegue funcionar. Para digitar de novo, recarregue a página.", "aviso");
+    }
+    throw Object.assign(new Error("Senha necessária."), { silencioso: true });
+  }
+  guardar.escrever("jarvis.senha", nova.trim());
+  location.reload();
+  return new Promise(() => {}); // a página vai recarregar
 }
 
 // Perfil de quem está usando: "adulto" ou "estudante" (Modo Escola). As chamadas esperam saber o perfil.
@@ -182,7 +194,7 @@ async function api(caminho, opcoes = {}) {
     headers: { "Content-Type": "application/json", "x-jarvis-senha": senha, ...(opcoes.headers || {}) },
   });
   const dados = await resp.json().catch(() => ({}));
-  if (resp.status === 401) return tratarNaoAutorizado(dados, () => api(caminho, opcoes));
+  if (resp.status === 401) return tratarNaoAutorizado(dados);
   if (!resp.ok) throw new Error(dados.erro || `Erro ${resp.status}`);
   return dados;
 }
@@ -196,7 +208,7 @@ async function conversarAoVivo(corpo, aoEvento) {
   });
   if (!resp.ok || !resp.body) {
     const dados = await resp.json().catch(() => ({}));
-    if (resp.status === 401) return tratarNaoAutorizado(dados, () => conversarAoVivo(corpo, aoEvento));
+    if (resp.status === 401) return tratarNaoAutorizado(dados);
     throw new Error(dados.erro || `Erro ${resp.status}`);
   }
   const leitor = resp.body.getReader();
