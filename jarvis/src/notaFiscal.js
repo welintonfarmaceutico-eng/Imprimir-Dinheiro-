@@ -26,10 +26,12 @@ const FERRAMENTA = {
   },
 };
 
-export function validarImagem({ imagem, tipo }) {
-  if (!TIPOS.includes(tipo)) throw new Error("Mande uma foto em JPG, PNG ou WEBP.");
+export function validarImagem({ imagem, tipo }, { aceitarPdf = false } = {}) {
+  if (!TIPOS.includes(tipo) && !(aceitarPdf && tipo === "application/pdf")) {
+    throw new Error(aceitarPdf ? "Mande uma foto (JPG, PNG ou WEBP) ou um PDF." : "Mande uma foto em JPG, PNG ou WEBP.");
+  }
   if (typeof imagem !== "string" || !/^[A-Za-z0-9+/]+=*$/.test(imagem)) throw new Error("A foto chegou com defeito. Tente de novo.");
-  if (imagem.length * 0.75 > MAX_BYTES) throw new Error("A foto ficou grande demais. Tente de novo mais de perto.");
+  if (imagem.length * 0.75 > MAX_BYTES) throw new Error(tipo === "application/pdf" ? "O PDF é grande demais (máximo 5 MB)." : "A foto ficou grande demais. Tente de novo mais de perto.");
 }
 
 // Pede ao Claude os dados da nota. Devolve os campos da ferramenta.

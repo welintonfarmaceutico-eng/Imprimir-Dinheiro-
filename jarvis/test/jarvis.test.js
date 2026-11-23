@@ -884,7 +884,7 @@ test("telegram: foto vira gasto e botões viram links", async () => {
   await armazem.salvar("config", "telegram", { chatId: 7 });
   let fotoRecebida;
   await telegram.processar({ update_id: 1, message: { chat: { id: 7 }, photo: [{ file_id: "p" }, { file_id: "g" }] } }, {
-    notaFiscal: async (foto) => { fotoRecebida = foto; return { texto: "Anotei o gasto de R$ 10,00." }; },
+    notaFiscal: async (foto) => { fotoRecebida = foto; return { texto: "Anotei o gasto de R$ 10,00.", transacao: { id: "t1" } }; },
   });
   assert.equal(tg.chamadas.find((c) => c.metodo === "getFile").corpo.file_id, "g", "usa a foto maior");
   assert.equal(fotoRecebida.imagem, Buffer.from("jpeg falso").toString("base64"));
@@ -1078,4 +1078,63 @@ test("especialistas: farmacêutico, contador e corretor estão nas instruções"
   assert.match(sistema, /CRC/);
   assert.match(sistema, /IGP-M ou IPCA/);
   assert.match(sistema, /CRECI/);
+});
+
+// ---------- Foto ou PDF de documento para análise ----------
+test("documento: a foto vai para a IA junto com a pergunta, mas não fica guardada no histórico", async () => {
+  const banco = novoBanco();
+  const cerebro = new Cerebro(criarFerramentas(banco), banco);
+  cerebro.cliente = clienteFalso([
+    { stop_reason: "end_turn", content: [{ type: "text", text: "É um contrato de locação de 30 meses. A multa da cláusula 8 está alta." }] },
+    { stop_reason: "end_turn", content: [{ type: "text", text: "Pode negociar para 3 aluguéis." }] },
+  ]);
+  const foto = { imagem: Buffer.from("foto").toString("base64"), tipo: "image/jpeg" };
+  const r = await cerebro.conversar("doc1", "esse contrato está bom?", null, { anexo: foto });
+  assert.match(r.texto, /contrato de locação/);
+  const enviado = cerebro.cliente.pedidos[0].messages[0].content;
+  assert.deepEqual(enviado[0], { type: "image", source: { type: "base64", media_type: "image/jpeg", data: foto.imagem } });
+  assert.match(enviado[1].text, /esse contrato está bom\?\n\[Documento anexado\]$/);
+
+  await cerebro.conversar("doc1", "e a multa?");
+  const historico = cerebro.cliente.pedidos[1].messages[0].content;
+  assert.equal(historico[0].type, "text", "a foto virou um aviso no histórico");
+  assert.match(historico[0].text, /enviou um documento/);
+
+  const pdf = { imagem: Buffer.from("%PDF").toString("base64"), tipo: "application/pdf" };
+  cerebro.cliente = clienteFalso([{ stop_reason: "end_turn", content: [{ type: "text", text: "Ok." }] }]);
+  await cerebro.conversar("doc2", "analisa", null, { anexo: pdf });
+  assert.equal(cerebro.cliente.pedidos[0].messages[0].content[0].type, "document");
+  await assert.rejects(cerebro.conversar("doc3", "x", null, { anexo: { imagem: "abc", tipo: "image/gif" } }), /foto \(JPG, PNG ou WEBP\) ou um PDF/);
+});
+
+test("telegram: foto com legenda e PDF são analisados; foto sem legenda que não é nota também", async () => {
+  const armazem = new ArmazemBlobs(blobsFalso());
+  const tg = telegramFalso();
+  const telegram = new Telegram(armazem, { fetch: tg.f, env: { TELEGRAM_BOT_TOKEN: "1:X" } });
+  await armazem.salvar("config", "telegram", { chatId: 5 });
+  const pedidos = [];
+  const jarvis = {
+    conversar: async (conversa, texto, anexo) => { pedidos.push({ texto, tipo: anexo?.tipo }); return { texto: "Análise pronta." }; },
+    notaFiscal: async () => ({ texto: "Não consegui ler o valor.", transacao: null }),
+  };
+  await telegram.processar({ update_id: 1, message: { chat: { id: 5 }, caption: "essa receita está certa?", photo: [{ file_id: "f" }] } }, jarvis);
+  await telegram.processar({ update_id: 2, message: { chat: { id: 5 }, document: { file_id: "d", mime_type: "application/pdf" } } }, jarvis);
+  await telegram.processar({ update_id: 3, message: { chat: { id: 5 }, photo: [{ file_id: "g" }] } }, jarvis);
+  assert.deepEqual(pedidos, [
+    { texto: "essa receita está certa?", tipo: "image/jpeg" },
+    { texto: "Analise este documento e me oriente.", tipo: "application/pdf" },
+    { texto: "Analise este documento e me oriente.", tipo: "image/jpeg" },
+  ]);
+  assert.equal(tg.enviadas().at(-1).text, "Análise pronta.");
+});
+
+test("rotas: conversa ao vivo aceita documento e recusa formato inválido", async () => {
+  const armazem = new ArmazemBlobs(blobsFalso());
+  const cliente = clienteFalso([{ stop_reason: "end_turn", content: [{ type: "text", text: "É uma notificação." }] }]);
+  const tratar = criarJarvis(armazem, { senha: "", cliente });
+  const post = (corpo) => tratar(new Request("http://x/api/conversar/ao-vivo", { method: "POST", body: JSON.stringify(corpo) }));
+  assert.equal((await post({ conversa: "c1", imagem: "abc", tipo: "image/gif" })).status, 400);
+  const texto = await (await post({ conversa: "c1", imagem: Buffer.from("x").toString("base64"), tipo: "image/png" })).text();
+  assert.match(texto, /É uma notificação/);
+  assert.match(cliente.pedidos[0].messages[0].content[1].text, /Analise este documento e me oriente\./);
 });

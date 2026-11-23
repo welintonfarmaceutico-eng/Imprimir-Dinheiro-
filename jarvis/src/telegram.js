@@ -82,15 +82,32 @@ export class Telegram {
     return this.api("sendMessage", corpo);
   }
 
-  async #baixarFoto(fotos) {
-    const maior = fotos.at(-1); // o Telegram manda vários tamanhos; o último é o maior (até 1280 px)
-    const arquivo = await this.api("getFile", { file_id: maior.file_id });
+  async #baixarArquivo(fileId, tipo) {
+    const arquivo = await this.api("getFile", { file_id: fileId });
     const resp = await this.fetch(`${API}/file/bot${this.token}/${arquivo.file_path}`);
-    if (!resp.ok) throw new Error("Não consegui baixar a foto do Telegram.");
-    return { imagem: Buffer.from(await resp.arrayBuffer()).toString("base64"), tipo: "image/jpeg" };
+    if (!resp.ok) throw new Error("Não consegui baixar o arquivo do Telegram.");
+    return { imagem: Buffer.from(await resp.arrayBuffer()).toString("base64"), tipo };
   }
 
-  // Trata uma mensagem que chegou ao robô. "jarvis" traz { conversar(conversa, texto), notaFiscal(foto) }.
+  // O Telegram manda vários tamanhos da foto; o último é o maior (até 1280 px).
+  #baixarFoto(fotos) {
+    return this.#baixarArquivo(fotos.at(-1).file_id, "image/jpeg");
+  }
+
+  // Responde no chat com o texto, os botões e os documentos/posts que vieram na resposta.
+  async #responder(chatId, r) {
+    await this.enviar(chatId, r.texto, r.botoes || []);
+    for (const p of r.posts || []) {
+      if (p.titulo) {
+        // Documento: pode ser longo; vai em partes de até 3.800 caracteres, cortando em quebra de linha.
+        for (const parte of partes(`${p.titulo}\n\n${p.texto}`, 3800)) await this.enviar(chatId, parte);
+      } else {
+        await this.enviar(chatId, p.texto, [{ rotulo: "Abrir o Instagram", url: "https://www.instagram.com/" }]);
+      }
+    }
+  }
+
+  // Trata uma mensagem que chegou ao robô. "jarvis" traz { conversar(conversa, texto, anexo), notaFiscal(foto) }.
   async processar(atualizacao, jarvis) {
     const msg = atualizacao?.message;
     if (!msg?.chat?.id) return;
@@ -119,23 +136,29 @@ export class Telegram {
 
     await this.api("sendChatAction", { chat_id: chatId, action: "typing" }).catch(() => {});
     try {
-      if (msg.photo?.length) {
-        const r = await jarvis.notaFiscal(await this.#baixarFoto(msg.photo));
-        await this.enviar(chatId, r.texto);
-      } else if (texto) {
-        const r = await jarvis.conversar(`telegram-${hojeLocal()}`, texto); // conversa nova a cada dia (mais barato)
-        await this.enviar(chatId, r.texto, r.botoes || []);
-        // Cada post vai numa mensagem separada, para copiar ou encaminhar de uma vez.
-        for (const p of r.posts || []) {
-          if (p.titulo) {
-            // Documento: pode ser longo; vai em partes de até 3.800 caracteres, cortando em quebra de linha.
-            for (const parte of partes(`${p.titulo}\n\n${p.texto}`, 3800)) await this.enviar(chatId, parte);
-          } else {
-            await this.enviar(chatId, p.texto, [{ rotulo: "Abrir o Instagram", url: "https://www.instagram.com/" }]);
-          }
+      const conversa = `telegram-${hojeLocal()}`; // conversa nova a cada dia (mais barato)
+      const pdf = msg.document?.mime_type === "application/pdf" ? msg.document : null;
+      const imagemComoArquivo = /^image\/(jpeg|png|webp)$/.test(msg.document?.mime_type || "") ? msg.document : null;
+      if (pdf || imagemComoArquivo) {
+        // PDF ou foto mandada como arquivo: analisa o documento (com a pergunta da legenda, se houver).
+        const doc = pdf || imagemComoArquivo;
+        const anexo = await this.#baixarArquivo(doc.file_id, doc.mime_type);
+        await this.#responder(chatId, await jarvis.conversar(conversa, texto || "Analise este documento e me oriente.", anexo));
+      } else if (msg.photo?.length) {
+        const foto = await this.#baixarFoto(msg.photo);
+        if (texto) {
+          // Foto com legenda: análise do documento, respondendo à pergunta da legenda.
+          await this.#responder(chatId, await jarvis.conversar(conversa, texto, foto));
+        } else {
+          // Foto sem legenda: tenta como nota fiscal; se não for, analisa como documento.
+          const r = await jarvis.notaFiscal(foto);
+          if (r.transacao) await this.enviar(chatId, r.texto);
+          else await this.#responder(chatId, await jarvis.conversar(conversa, "Analise este documento e me oriente.", foto));
         }
+      } else if (texto) {
+        await this.#responder(chatId, await jarvis.conversar(conversa, texto));
       } else {
-        await this.enviar(chatId, "Por enquanto eu entendo texto e foto de nota fiscal. No carro, dite a mensagem que o Android Auto transforma em texto.");
+        await this.enviar(chatId, "Por enquanto eu entendo texto, fotos (nota fiscal ou documento) e PDF. No carro, dite a mensagem que o Android Auto transforma em texto.");
       }
     } catch (erro) {
       await this.enviar(chatId, erro.mensagemParaUsuario || erro.message || "Tive um problema agora. Tente de novo.").catch(() => {});

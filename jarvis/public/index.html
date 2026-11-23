@@ -61,8 +61,8 @@
 
       <form class="entrada" id="formulario">
         <input id="texto" autocomplete="off" placeholder="Digite ou fale com o Jarvis..." />
-        <label class="botao-sec botao-foto" title="Foto de nota fiscal ou recibo: o Jarvis anota o gasto" aria-label="Foto de nota fiscal">
-          📷<input type="file" id="fotoNota" accept="image/*" capture="environment" hidden />
+        <label class="botao-sec botao-foto" title="Foto ou PDF: analisar documento ou anotar nota fiscal" aria-label="Enviar foto ou PDF">
+          📷<input type="file" id="fotoNota" accept="image/*,application/pdf" hidden />
         </label>
         <button type="submit" class="botao">Enviar</button>
       </form>
@@ -90,6 +90,24 @@
       <div class="acoes">
         <button type="button" class="botao-sec" id="cancelarRapido">Cancelar</button>
         <button type="submit" class="botao" id="salvarRapido">Salvar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Foto ou PDF: analisar documento ou anotar nota fiscal -->
+  <dialog id="dialogoFoto">
+    <form method="dialog" id="formFoto">
+      <h3>O que faço com este arquivo?</h3>
+      <div class="campos">
+        <p class="nota-pc" id="nomeArquivo"></p>
+        <label><span>Pergunta (opcional)</span>
+          <textarea id="perguntaFoto" rows="3" placeholder="Ex.: esse contrato está bom? / essa receita tem interação?"></textarea>
+        </label>
+      </div>
+      <div class="acoes acoes-foto">
+        <button type="button" class="botao-sec" id="cancelarFoto">Cancelar</button>
+        <button type="button" class="botao-sec" id="notaFoto">🧾 Anotar gasto</button>
+        <button type="button" class="botao" id="analisarFoto">📄 Analisar documento</button>
       </div>
     </form>
   </dialog>
