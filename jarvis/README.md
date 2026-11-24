@@ -154,6 +154,13 @@ Crie no Cloudflare o segredo `JARVIS_SENHA_ESTUDANTE` (uma senha só da criança
 
 O professor segue a BNCC (por volta do 5º ano), não entrega a resposta pronta do dever (dá dicas e perguntas até a criança chegar lá), aceita foto do exercício, faz quiz e ensina inglês: as frases em inglês vêm entre `[en]` e `[/en]` e são faladas com voz americana; o atalho "Responder em inglês" faz a próxima fala ser entendida em inglês. Para trocar entre adulto e Modo Escola no mesmo aparelho: ⚙ Ajustes → "Trocar de pessoa".
 
+### Estrelas, provas, relatório e custo do Modo Escola
+
+- **Estrelas e conquistas:** cada exercício corrigido vale ⭐ (2 se acertou de primeira, 1 pelo esforço). Dias seguidos estudando contam 🔥, e há conquistas (10, 25, 50... estrelas; 3, 7, 15... dias). O placar aparece no topo da tela dela.
+- **Provas:** "tenho prova de frações na sexta" fica guardado; nos dias antes, o professor oferece revisão aos poucos e um mini simulado na véspera.
+- **Relatório para os pais:** às 19h (`JARVIS_RELATORIO_ESCOLA_HORA`, ou `desligado`), se ela estudou no dia, chega no WhatsApp e no Telegram: matérias, exercícios e acertos, o que reforçar, observações do professor, estrelas e provas próximas. O adulto também pode perguntar "como a Mariana está indo?".
+- **Custo menor:** o Modo Escola usa o Claude Haiku 5.5 (`JARVIS_MODELO_ESCOLA`), bem mais barato. Se ele recusar um pedido, a mesma pergunta é refeita no modelo principal, que fica valendo por 1 hora (rede de segurança).
+
 ## Instagram da Porto e Toledo
 
 **Posts prontos:** peça "faz um post do Lote 09" e o Jarvis escreve legenda, hashtags e o melhor horário, com botão de copiar (no Telegram, o post vem numa mensagem separada).

@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { ArmazemArquivo, ArmazemBlobs } from "../src/armazem.js";
 import { Banco } from "../src/db.js";
-import { criarFerramentas } from "../src/ferramentas.js";
+import { criarFerramentas, criarFerramentasEstudante } from "../src/ferramentas.js";
 import { Cerebro } from "../src/cerebro.js";
 import { criarJarvis } from "../src/rotas.js";
 
@@ -1195,7 +1195,10 @@ test("modo escola: senha da estudante só conversa com o professor; o resto é b
   const p = cliente.pedidos[0];
   assert.match(p.system, /Modo Escola/);
   assert.match(p.system, /Não entregue a resposta pronta/);
-  assert.deepEqual(p.tools.map((t) => t.name), ["web_search", "documento_pronto"]);
+  assert.deepEqual(p.tools.map((t) => t.name), ["web_search", "documento_pronto", "registrar_estudo", "meu_progresso", "agendar_prova", "remover_prova"]);
+  assert.equal(p.model, "claude-haiku-5-5", "Modo Escola usa o modelo mais barato");
+  assert.equal(p.tools[0].type, "web_search_20250305", "no Haiku vai a busca básica");
+  assert.equal(p.betas, undefined, "no Haiku não vão os recursos beta");
   assert.ok(await armazem.obter("conversas", "escola-c1"), "conversa da escola fica separada");
 
   // O adulto continua com tudo.
@@ -1288,4 +1291,72 @@ test("ferramentas: nunca passam de 20 com strict, mesmo com tudo ligado", () => 
 test("erros: erro inesperado da API mostra um detalhe técnico curto", () => {
   const erro = new Anthropic.BadRequestError(400, { type: "error", error: { type: "invalid_request_error", message: "Too many strict tools" } }, "Too many strict tools", new Headers());
   assert.match(explicarErro(erro).mensagem, /problema para pensar.*Detalhe técnico: .*strict tools/);
+});
+
+// ---------- Modo Escola: estrelas, conquistas, provas, relatório e modelo reserva ----------
+import { Escola } from "../src/escola.js";
+
+test("escola: estrelas, dias seguidos e conquistas", async () => {
+  process.env.TZ = "America/Sao_Paulo";
+  const escola = new Escola(new ArmazemBlobs(blobsFalso()));
+  const dia = (d, h = "15:00") => new Date(`2026-11-${d}T${h}:00-03:00`);
+  const r1 = await escola.registrarEstudo({ materia: "matemática", assunto: "frações", resultado: "acertou", observacao: "" }, dia(22));
+  assert.deepEqual(r1.conquistasNovas, ["🎉 Primeiro exercício com o Jarvis!"]);
+  assert.equal(r1.estrelasGanhas, 2);
+  await escola.registrarEstudo({ materia: "inglês", assunto: "cores", resultado: "praticou", observacao: "" }, dia(23));
+  const r3 = await escola.registrarEstudo({ materia: "matemática", assunto: "frações", resultado: "errou", observacao: "confundiu numerador" }, dia(24));
+  assert.equal(r3.diasSeguidos, 3);
+  assert.ok(r3.conquistasNovas.includes("🔥 3 dias seguidos estudando!"));
+  for (let i = 0; i < 3; i++) await escola.registrarEstudo({ materia: "ciências", assunto: "água", resultado: "acertou", observacao: "" }, dia(24));
+  const p = await escola.progresso(dia(24, "18:00"));
+  assert.equal(p.estrelas, 2 + 1 + 1 + 6);
+  assert.equal(p.exerciciosHoje, 4);
+  assert.equal(p.acertosHoje, 3);
+  assert.ok(p.conquistas.includes("⭐ 10 estrelas!"));
+  assert.equal((await escola.progresso(dia(26))).diasSeguidos, 0, "pulou um dia: a sequência zera");
+  await assert.rejects(escola.registrarEstudo({ materia: "matemática", assunto: "", resultado: "talvez", observacao: "" }), /resultado/);
+});
+
+test("escola: provas viram contexto para o professor e o relatório sai uma vez às 19h", async () => {
+  process.env.TZ = "America/Sao_Paulo";
+  process.env.JARVIS_NOME_ESTUDANTE = "Mariana";
+  const armazem = new ArmazemBlobs(blobsFalso());
+  const escola = new Escola(armazem);
+  const agora = new Date("2026-11-24T15:00:00-03:00");
+  const { faltamDias } = await escola.agendarProva({ materia: "matemática", assunto: "frações", data: "2026-11-27" }, agora);
+  assert.equal(faltamDias, 3);
+  assert.match(await escola.contexto(agora), /^\[Provas marcadas: matemática \(frações\) em 3 dias, sexta-feira, 27\/11\]$/);
+  await assert.rejects(escola.agendarProva({ materia: "inglês", assunto: "", data: "2026-11-01" }, agora), /já passou/);
+
+  const zap = { configurado: true, enviados: [], enviar: async function (t) { this.enviados.push(t); } };
+  const tg = { nome: "telegram", configurado: true, enviados: [], enviar: async function (t) { this.enviados.push(t); } };
+  assert.deepEqual(await escola.enviarRelatorio([zap, tg], new Date("2026-11-24T19:05:00-03:00"), 19), { enviados: 0 }, "não estudou: sem relatório");
+  await escola.registrarEstudo({ materia: "matemática", assunto: "frações", resultado: "errou", observacao: "precisou de dica no MMC" }, agora);
+  await escola.registrarEstudo({ materia: "inglês", assunto: "animais", resultado: "acertou", observacao: "" }, agora);
+  assert.deepEqual(await escola.enviarRelatorio([zap, tg], new Date("2026-11-24T18:00:00-03:00"), 19), { enviados: 0 }, "antes das 19h");
+  assert.deepEqual(await escola.enviarRelatorio([zap, tg], new Date("2026-11-24T19:05:00-03:00"), 19), { enviados: 2 });
+  assert.deepEqual(await escola.enviarRelatorio([zap, tg], new Date("2026-11-24T19:30:00-03:00"), 19), { enviados: 0 }, "uma vez por dia");
+  const texto = zap.enviados[0];
+  assert.match(texto, /^📚 Mariana estudou com o Jarvis hoje/);
+  assert.match(texto, /Matérias: matemática \(frações\); inglês \(animais\)/);
+  assert.match(texto, /Exercícios: 2 \(1 acerto de primeira\)/);
+  assert.match(texto, /Para reforçar: frações/);
+  assert.match(texto, /precisou de dica no MMC/);
+  assert.match(texto, /📅 Prova de matemática \(frações\) em 3 dias/);
+  assert.equal((await escola.removerProva({ materia: "matemática" })).removidas, 1);
+  delete process.env.JARVIS_NOME_ESTUDANTE;
+});
+
+test("cérebro: se o modelo barato recusar o pedido, refaz no modelo principal e segue nele", async () => {
+  const banco = novoBanco();
+  const cerebro = new Cerebro(criarFerramentasEstudante(), banco, { sistema: "x", modelo: "claude-haiku-5-5", modeloReserva: "claude-opus-5-5" });
+  const erro400 = new Anthropic.BadRequestError(400, { type: "error", error: { type: "invalid_request_error", message: "recurso não aceito" } }, "recurso não aceito", new Headers());
+  cerebro.cliente = clienteFalso([erro400, { stop_reason: "end_turn", content: [{ type: "text", text: "Oi!" }] }, { stop_reason: "end_turn", content: [{ type: "text", text: "De novo." }] }]);
+  const r = await cerebro.conversar("e1", "oi");
+  assert.equal(r.texto, "Oi!");
+  const modelos = cerebro.cliente.pedidos.map((p) => p.model);
+  assert.deepEqual(modelos, ["claude-haiku-5-5", "claude-opus-5-5"]);
+  assert.equal(cerebro.cliente.pedidos[1].tools[0].type, "web_search_20260209");
+  await cerebro.conversar("e1", "tudo bem?");
+  assert.equal(cerebro.cliente.pedidos[2].model, "claude-opus-5-5", "fica no principal por um tempo");
 });
