@@ -136,6 +136,12 @@ No 📷, escolha uma foto ou um PDF (até 5 MB) e toque em **Analisar documento*
 
 "Me lembra de tomar o remédio todo dia às 8h", "de segunda a sexta às 7h", "toda segunda" ou "todo dia 10". Cinco minutos depois de cada aviso, o lembrete passa para a próxima vez. Para parar, peça para concluir o lembrete. No botão "+ Lembrete" também tem a opção "Repetir".
 
+## Painel de gastos com a IA
+
+Em ⚙ Ajustes → **Gastos com a IA**: hoje, este mês, previsão do mês, divisão (você, Modo Escola, fotos e documentos) e os últimos 7 dias; no painel de Finanças aparece uma linha com o total do mês. Defina um **limite por mês** (em reais): ao chegar em 80% e em 100%, chega um aviso no WhatsApp e no Telegram (uma vez cada). Também dá para perguntar ao Jarvis "quanto gastei de IA este mês?".
+
+É uma **estimativa**: a cada resposta, a API informa os tokens lidos e escritos, e o Jarvis multiplica pela tabela de preços de cada modelo (`src/uso.js`) e pela cotação `JARVIS_DOLAR` (padrão 5,5). O valor oficial fica em console.anthropic.com.
+
 ## Contatos e apps no celular
 
 "Liga para a Maria", "manda mensagem pra minha mãe dizendo que chego às 8", "chama um Uber até a rodoviária", "procura pizza no iFood": o Jarvis acha o número nos **contatos do Jarvis** e mostra o botão (ligar, SMS, WhatsApp, Uber, iFood, Gmail, Google Agenda, Mercado Livre e os de antes).

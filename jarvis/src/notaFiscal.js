@@ -35,7 +35,7 @@ export function validarImagem({ imagem, tipo }, { aceitarPdf = false } = {}) {
 }
 
 // Pede ao Claude os dados da nota. Devolve os campos da ferramenta.
-export async function lerNotaFiscal(cliente, { imagem, tipo }, agora = new Date()) {
+export async function lerNotaFiscal(cliente, { imagem, tipo }, agora = new Date(), aoUsar = null) {
   validarImagem({ imagem, tipo });
   const resposta = await cliente.messages.create({
     model: MODELO,
@@ -55,6 +55,7 @@ export async function lerNotaFiscal(cliente, { imagem, tipo }, agora = new Date(
       ],
     }],
   });
+  if (aoUsar && resposta.usage) await aoUsar({ modelo: resposta.model || MODELO, usage: resposta.usage }).catch((e) => console.error("Painel de gastos:", e.message));
   const uso = resposta.content?.find((b) => b.type === "tool_use" && b.name === FERRAMENTA.name);
   if (!uso) throw new Error("Não consegui ler a nota. Tente outra foto.");
   return uso.input;
@@ -63,8 +64,8 @@ export async function lerNotaFiscal(cliente, { imagem, tipo }, agora = new Date(
 const real = (v) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
 // Lê a nota e registra o gasto. Devolve { texto, transacao } para mostrar e falar.
-export async function registrarNotaFiscal(cliente, banco, foto, agora = new Date()) {
-  const d = await lerNotaFiscal(cliente, foto, agora);
+export async function registrarNotaFiscal(cliente, banco, foto, agora = new Date(), aoUsar = null) {
+  const d = await lerNotaFiscal(cliente, foto, agora, aoUsar);
   if (!d.legivel || !(d.valor_total > 0)) {
     return { texto: "Não consegui ler o valor dessa nota. Tente uma foto mais de perto, com boa luz e a nota inteira aparecendo.", transacao: null };
   }

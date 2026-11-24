@@ -430,3 +430,19 @@ body:not([data-perfil="estudante"]) .placar { display: none; }
   .controles .icone { padding: 4px 8px; }
   body[data-perfil="estudante"] .marca { font-size: 12px; letter-spacing: .12em; }
 }
+
+/* Painel de gastos com a IA */
+.uso-numeros { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.uso-numeros div { display: grid; gap: 2px; }
+.uso-numeros span { color: var(--apagado); font-size: 12px; }
+.uso-numeros strong { font-size: 17px; }
+.uso-barras { display: flex; align-items: flex-end; gap: 6px; height: 70px; padding-top: 4px; }
+.uso-barra { flex: 1; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 2px; }
+.uso-barra i { display: block; width: 100%; border-radius: 4px 4px 0 0; background: linear-gradient(var(--acento-claro), var(--acento)); }
+.uso-barra small { font-size: 11px; color: var(--apagado); }
+.uso-limite { height: 8px; border-radius: 4px; background: rgba(var(--acento-rgb), .15); overflow: hidden; }
+.uso-limite i { display: block; height: 100%; background: var(--verde); }
+.uso-limite.alerta i { background: var(--laranja); }
+#usoLimite { width: 90px; }
+.uso-financas { margin-top: 10px; }
+body[data-perfil="estudante"] .uso-financas { display: none; }

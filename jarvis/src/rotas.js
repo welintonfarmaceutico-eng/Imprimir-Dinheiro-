@@ -17,6 +17,7 @@ import { Instagram } from "./instagram.js";
 import { Escola } from "./escola.js";
 import { Voz } from "./voz.js";
 import { Contatos } from "./contatos.js";
+import { Uso } from "./uso.js";
 import { Toledo } from "./toledo.js";
 
 const json = (dados, status = 200) => Response.json(dados, { status });
@@ -70,13 +71,16 @@ export function criarJarvis(armazem, { senha = process.env.JARVIS_SENHA || "", s
   const escola = new Escola(armazem);
   const voz = new Voz(vozOpcoes);
   const contatos = new Contatos(armazem); // só o adulto (o Modo Escola não chega nas rotas nem na ferramenta)
-  const cerebro = new Cerebro(criarFerramentas(banco, agenda, whatsapp, computador, toledo, clima, instagram, escola, contatos), banco);
+  const uso = new Uso(armazem); // painel de gastos com a IA (estimativa)
+  const gastoDe = (quem) => (u) => uso.registrar({ quem, ...u });
+  const cerebro = new Cerebro(criarFerramentas(banco, agenda, whatsapp, computador, toledo, clima, instagram, escola, contatos, uso), banco, { aoUsar: gastoDe("adulto") });
   // Modo Escola: professor particular, sem nenhuma ferramenta do adulto (finanças, Toledo, PC, WhatsApp...).
   // Usa um modelo mais barato (Haiku); se ele falhar, refaz no modelo principal (rede de segurança).
   const cerebroEstudante = new Cerebro(criarFerramentasEstudante(escola), banco, {
     sistema: promptEstudante(),
     modelo: process.env.JARVIS_MODELO_ESCOLA || "claude-haiku-5-5",
     modeloReserva: process.env.JARVIS_MODELO || "claude-opus-5-5",
+    aoUsar: gastoDe("escola"),
   });
   if (cliente) cerebro.cliente = cerebroEstudante.cliente = cliente; // só nos testes
 
@@ -232,7 +236,7 @@ export function criarJarvis(armazem, { senha = process.env.JARVIS_SENHA || "", s
       try {
         await telegram.processar(atualizacao, {
           conversar: comAviso((conversa, texto, anexo = null) => cerebro.conversar(conversa, texto.slice(0, 4000), null, { aparelho: "celular", anexo })),
-          notaFiscal: comAviso((foto) => registrarNotaFiscal(cerebro.cliente, banco, foto)),
+          notaFiscal: comAviso((foto) => registrarNotaFiscal(cerebro.cliente, banco, foto, new Date(), gastoDe("fotos"))),
         });
       } catch (erro) {
         console.error("Telegram:", erro); // responde 200 mesmo assim, para o Telegram não repetir
@@ -305,7 +309,7 @@ export function criarJarvis(armazem, { senha = process.env.JARVIS_SENHA || "", s
       case "POST /api/nota-fiscal": {
         const { imagem, tipo } = await corpo(req);
         try {
-          return json(await registrarNotaFiscal(cerebro.cliente, banco, { imagem, tipo }));
+          return json(await registrarNotaFiscal(cerebro.cliente, banco, { imagem, tipo }, new Date(), gastoDe("fotos")));
         } catch (erro) {
           if (!(erro instanceof Anthropic.APIError)) return json({ erro: erro.message }, 400);
           console.error(erro);
@@ -401,6 +405,14 @@ export function criarJarvis(armazem, { senha = process.env.JARVIS_SENHA || "", s
         return json({ ok: true });
       case "GET /api/escola/progresso":
         return json({ ...(await escola.progresso()), provas: await escola.provasProximas() });
+      case "GET /api/uso":
+        return json(await uso.resumo());
+      case "POST /api/uso/limite":
+        try {
+          return json(await uso.definirLimite((await corpo(req)).mensalReais));
+        } catch (erro) {
+          return json({ erro: erro.message }, 400);
+        }
       case "GET /api/contatos":
         return json({ quantidade: await contatos.quantidade() });
       case "POST /api/contatos/importar":
@@ -472,6 +484,8 @@ export async function verificarLembretesWhatsApp(armazem) {
   const resumo = await enviarResumoDiario(banco, armazem, whatsapp, agenda, new Date(), undefined, toledo, clima, instagram);
   await enviarResumoDiario(banco, armazem, telegram, agenda, new Date(), undefined, toledo, clima, instagram);
   const relatorio = await enviarRelatorioMensal(banco, armazem, whatsapp);
+  // Painel de gastos com a IA: aviso ao chegar em 80% e 100% do limite do mês.
+  await new Uso(armazem).avisarLimite([whatsapp, telegram]).catch((e) => console.error("Aviso de gastos:", e.message));
   // Relatório do Modo Escola para o pai/mãe (às 19h, se a criança estudou no dia).
   await new Escola(armazem).enviarRelatorio([whatsapp, telegram]).catch((e) => console.error("Relatório da escola:", e.message));
   await enviarRelatorioMensal(banco, armazem, telegram);

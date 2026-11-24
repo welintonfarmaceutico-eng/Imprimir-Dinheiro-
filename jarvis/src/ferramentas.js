@@ -19,7 +19,7 @@ export const MAX_STRICT = 20;
 const SEM_STRICT = new Set([
   "listar_notas", "listar_lembretes", "resumo_financeiro", "listar_transacoes", "agenda_listar_eventos",
   "consultar_carteira_toledo", "instagram_novidades", "definir_cidade", "documento_pronto", "post_instagram",
-  "meu_progresso", "progresso_escola",
+  "meu_progresso", "progresso_escola", "gastos_ia",
 ]);
 export function comStrict(ferramentas) {
   let usados = 0;
@@ -115,7 +115,7 @@ export function criarFerramentasEstudante(escola = null) {
   };
 }
 
-export function criarFerramentas(banco, agenda = null, whatsapp = null, computador = null, toledo = null, clima = null, instagram = null, escola = null, contatos = null) {
+export function criarFerramentas(banco, agenda = null, whatsapp = null, computador = null, toledo = null, clima = null, instagram = null, escola = null, contatos = null, uso = null) {
   const ferramentas = [
     // ---------- Notas ----------
     {
@@ -301,6 +301,20 @@ export function criarFerramentas(banco, agenda = null, whatsapp = null, computad
         }),
       },
       executar: ({ acao, alvo }) => computador.executar(acao, alvo),
+    });
+  }
+
+  // ---------- Painel de gastos com a IA ----------
+  if (uso) {
+    ferramentas.push({
+      definicao: {
+        name: "gastos_ia",
+        description:
+          "Mostra quanto foi gasto (estimativa, em reais) com a IA do Jarvis: hoje, no mês, previsão do mês, últimos 7 dias, separado em adulto, Modo Escola e fotos/documentos, e o limite mensal. " +
+          "Deixe claro que é estimativa; o valor oficial fica no console da Anthropic.",
+        input_schema: obj({}),
+      },
+      executar: () => uso.resumo(),
     });
   }
 
