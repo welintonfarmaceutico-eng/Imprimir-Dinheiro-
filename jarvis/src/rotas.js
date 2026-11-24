@@ -14,6 +14,7 @@ import { Clima } from "./clima.js";
 import { registrarNotaFiscal, validarImagem } from "./notaFiscal.js";
 import { Telegram } from "./telegram.js";
 import { Instagram } from "./instagram.js";
+import { Escola } from "./escola.js";
 import { Toledo } from "./toledo.js";
 
 const json = (dados, status = 200) => Response.json(dados, { status });
@@ -64,9 +65,15 @@ export function criarJarvis(armazem, { senha = process.env.JARVIS_SENHA || "", s
   const clima = new Clima(armazem);
   const telegram = new Telegram(armazem, telegramOpcoes);
   const instagram = new Instagram(armazem);
-  const cerebro = new Cerebro(criarFerramentas(banco, agenda, whatsapp, computador, toledo, clima, instagram), banco);
+  const escola = new Escola(armazem);
+  const cerebro = new Cerebro(criarFerramentas(banco, agenda, whatsapp, computador, toledo, clima, instagram, escola), banco);
   // Modo Escola: professor particular, sem nenhuma ferramenta do adulto (finanças, Toledo, PC, WhatsApp...).
-  const cerebroEstudante = new Cerebro(criarFerramentasEstudante(), banco, { sistema: promptEstudante() });
+  // Usa um modelo mais barato (Haiku); se ele falhar, refaz no modelo principal (rede de segurança).
+  const cerebroEstudante = new Cerebro(criarFerramentasEstudante(escola), banco, {
+    sistema: promptEstudante(),
+    modelo: process.env.JARVIS_MODELO_ESCOLA || "claude-haiku-5-5",
+    modeloReserva: process.env.JARVIS_MODELO || "claude-opus-5-5",
+  });
   if (cliente) cerebro.cliente = cerebroEstudante.cliente = cliente; // só nos testes
 
   const confere = (enviada, certa) => {
@@ -106,7 +113,7 @@ export function criarJarvis(armazem, { senha = process.env.JARVIS_SENHA || "", s
   }
 
   // Mesma conversa, mas a resposta vai chegando em tempo real (Server-Sent Events).
-  async function conversarAoVivo(req, cer = cerebro, prefixo = "") {
+  async function conversarAoVivo(req, cer = cerebro, prefixo = "", contexto = "") {
     const { conversa, texto: textoEnviado, aparelho, imagem, tipo } = await corpo(req);
     const anexo = imagem ? { imagem, tipo } : null;
     const texto = typeof textoEnviado === "string" && textoEnviado.trim() ? textoEnviado : anexo ? "Analise este documento e me oriente." : "";
@@ -121,7 +128,7 @@ export function criarJarvis(armazem, { senha = process.env.JARVIS_SENHA || "", s
       async start(controle) {
         const enviar = (evento) => controle.enqueue(codificador.encode(`data: ${JSON.stringify(evento)}\n\n`));
         try {
-          const r = await cer.conversar(prefixo + conversa, texto.trim().slice(0, 4000), (delta) => enviar({ tipo: "texto", delta }), { aparelho, anexo });
+          const r = await cer.conversar(prefixo + conversa, texto.trim().slice(0, 4000), (delta) => enviar({ tipo: "texto", delta }), { aparelho, anexo, contexto });
           enviar({ tipo: "fim", ...r });
         } catch (erro) {
           console.error(erro);
@@ -254,7 +261,8 @@ export function criarJarvis(armazem, { senha = process.env.JARVIS_SENHA || "", s
     if (rota === "GET /api/perfil") return json({ perfil: quem });
     if (quem === "estudante") {
       // Modo Escola: só a conversa com o professor (com foto do exercício). O resto é bloqueado.
-      if (rota === "POST /api/conversar/ao-vivo") return conversarAoVivo(req, cerebroEstudante, "escola-");
+      if (rota === "POST /api/conversar/ao-vivo") return conversarAoVivo(req, cerebroEstudante, "escola-", await escola.contexto());
+      if (rota === "GET /api/escola/progresso") return json(await escola.progresso());
       if (rota === "POST /api/conversa/limpar") {
         const { conversa } = await corpo(req);
         if (typeof conversa === "string" && ID_VALIDO.test(conversa)) await cerebroEstudante.limpar("escola-" + conversa);
@@ -369,6 +377,8 @@ export function criarJarvis(armazem, { senha = process.env.JARVIS_SENHA || "", s
       case "POST /api/telegram/desconectar":
         await telegram.desconectar();
         return json({ ok: true });
+      case "GET /api/escola/progresso":
+        return json({ ...(await escola.progresso()), provas: await escola.provasProximas() });
       case "GET /api/resumo":
         return json(await alterarResumo(armazem, { acao: "ver" }));
       case "POST /api/resumo":
@@ -430,6 +440,8 @@ export async function verificarLembretesWhatsApp(armazem) {
   const resumo = await enviarResumoDiario(banco, armazem, whatsapp, agenda, new Date(), undefined, toledo, clima, instagram);
   await enviarResumoDiario(banco, armazem, telegram, agenda, new Date(), undefined, toledo, clima, instagram);
   const relatorio = await enviarRelatorioMensal(banco, armazem, whatsapp);
+  // Relatório do Modo Escola para o pai/mãe (às 19h, se a criança estudou no dia).
+  await new Escola(armazem).enviarRelatorio([whatsapp, telegram]).catch((e) => console.error("Relatório da escola:", e.message));
   await enviarRelatorioMensal(banco, armazem, telegram);
   return { ...resultado, resumo: resumo.enviado, relatorio: relatorio.enviado, instagram: insta.avisos };
 }

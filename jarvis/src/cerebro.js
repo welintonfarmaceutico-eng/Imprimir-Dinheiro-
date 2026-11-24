@@ -6,6 +6,8 @@ import { validarImagem } from "./notaFiscal.js";
 const MODELO = process.env.JARVIS_MODELO || "claude-opus-5-5";
 const ESFORCO = process.env.JARVIS_ESFORCO || "low"; // low = respostas rápidas para voz
 const MAX_VOLTAS = 12; // limite de idas e vindas com ferramentas por pergunta
+const RESERVA_MS = 60 * 60 * 1000; // se o modelo mais barato falhar, usa o principal por 1 hora
+const ehHaiku = (modelo) => /^claude-haiku/.test(modelo);
 
 function promptDeSistema() {
   const nome = process.env.JARVIS_NOME_USUARIO;
@@ -30,6 +32,7 @@ O que você sabe fazer:
 - Especialistas: advogado, farmacêutico, contador e corretor/avaliador de imóveis, com documentos prontos (documento_pronto): notificações, contratos, recibos, orientações ao paciente e mais.
 - Posts para o Instagram da Porto e Toledo (post_instagram): legenda e hashtags prontas, com botão de copiar.
 - Instagram da Porto e Toledo (instagram_novidades, se estiver ligado): quem comentou ou mandou mensagem. Comentários e mensagens novas também chegam como aviso no WhatsApp e no Telegram.
+- Modo Escola da criança (progresso_escola): estrelas, dias seguidos, exercícios e acertos, conquistas e provas marcadas. O relatório do dia também chega no WhatsApp e no Telegram às 19h quando ela estuda.
 - Resumo diário: você pode ligar, desligar, pular o próximo ou mudar a hora com configurar_resumo_diario (também dá em Ajustes).
 - Resumo diário no WhatsApp com a previsão do tempo da cidade do usuário (definir_cidade guarda a cidade) e, no dia 1º, o relatório do mês anterior.
 - Abrir apps e sites no aparelho do usuário (abrir_no_aparelho): YouTube, Spotify, Waze, Google Maps, WhatsApp com outra pessoa, ligação, Instagram, Netflix, sites e pesquisas. Aparece um botão na tela e ele toca para abrir.
@@ -106,6 +109,16 @@ Como ensinar (o mais importante):
 - Para pesquisas da escola, use a busca na internet só em fontes confiáveis e adequadas para crianças, e explique com as suas palavras (nada de copiar texto grande).
 - Se pedirem uma lista de exercícios ou um resumo para estudar, use a ferramenta documento_pronto.
 
+Estrelas e conquistas:
+- Depois de corrigir cada exercício ou pergunta de quiz, chame registrar_estudo (uma vez por item, sem falar que chamou). Acertou de primeira vale 2 estrelas; errou ou precisou de ajuda vale 1 (o esforço também conta).
+- Quando vier uma conquista nova, comemore com ela de forma animada e curta. De vez em quando, conte quantas estrelas ela já tem.
+- Se ela perguntar das estrelas, dos dias seguidos ou das conquistas, use meu_progresso.
+
+Provas:
+- Quando ela contar que vai ter prova ou trabalho (ex.: "tenho prova de frações na sexta"), guarde com agendar_prova, calculando a data a partir do horário atual.
+- Se a mensagem trouxer "[Provas marcadas: ...]", ofereça revisar o conteúdo daquela prova, um pouco por dia: comece pelo que ela tem mais dúvida e termine com um mini simulado na véspera.
+- Depois que a prova passar, ou se ela disser que foi cancelada, tire da lista com remover_prova. Pergunte como foi a prova!
+
 Inglês (e outras línguas):
 - Ensine de forma divertida: vocabulário com temas (cores, animais, comida, família, escola), frases do dia a dia, pequenas conversas e jogos de tradução.
 - Coloque toda palavra ou frase em inglês entre [en] e [/en], por exemplo: "Gato em inglês é [en]cat[/en]." Assim ela ouve a pronúncia certa. Dê uma dica de pronúncia em português quando ajudar.
@@ -119,15 +132,52 @@ Segurança:
 }
 
 export class Cerebro {
-  constructor(ferramentas, banco, { sistema = promptDeSistema() } = {}) {
+  // modelo: qual IA responde. modeloReserva: se o modelo der erro de pedido (ex.: um recurso que ele
+  // não aceita), a mesma pergunta é refeita no modelo reserva, e ele fica valendo por 1 hora.
+  constructor(ferramentas, banco, { sistema = promptDeSistema(), modelo = MODELO, modeloReserva = null } = {}) {
     this.cliente = new Anthropic();
     this.ferramentas = ferramentas;
     this.banco = banco; // guarda o histórico das conversas
     this.sistema = sistema; // fixo: mantém o cache de prompt
-    this.tools = [
-      { type: "web_search_20260209", name: "web_search", max_uses: 2, user_location: { type: "approximate", country: "BR", timezone: fuso() } },
-      ...ferramentas.definicoes,
-    ];
+    this.modelo = modelo;
+    this.modeloReserva = modeloReserva && modeloReserva !== modelo ? modeloReserva : null;
+    this.reservaAte = 0;
+    this.tools = this.#ferramentasPara(modelo);
+  }
+
+  // A busca na internet mais nova (com filtro) não existe no Haiku: lá vai a versão básica.
+  #ferramentasPara(modelo) {
+    const busca = { name: "web_search", max_uses: 2, user_location: { type: "approximate", country: "BR", timezone: fuso() } };
+    return [{ type: ehHaiku(modelo) ? "web_search_20250305" : "web_search_20260209", ...busca }, ...this.ferramentas.definicoes];
+  }
+
+  get modeloAtual() {
+    return this.modeloReserva && Date.now() < this.reservaAte ? this.modeloReserva : this.modelo;
+  }
+
+  // Monta o pedido para cada modelo. O Haiku vai só com o básico (sem os recursos beta).
+  #pedidoPara(modelo, mensagens) {
+    const base = {
+      model: modelo,
+      max_tokens: 16000,
+      system: this.sistema,
+      tools: modelo === this.modelo ? this.tools : this.#ferramentasPara(modelo),
+      messages: mensagens,
+      output_config: { effort: ESFORCO },
+      cache_control: { type: "ephemeral" },
+    };
+    if (ehHaiku(modelo)) return { ...base, thinking: { type: "adaptive" } };
+    return {
+      ...base,
+      // Quando o Jarvis é atualizado (instruções ou ferramentas novas), o raciocínio salvo nas
+      // conversas antigas deixa de valer. "drop_block" descarta esse raciocínio antigo em vez de dar erro.
+      thinking: { type: "adaptive", block_binding: { prefix_mismatch_behavior: "drop_block" } },
+      // Se o modelo recusar por engano, o próprio servidor tenta outro modelo.
+      betas: ["server-side-fallback-2026-07-01", "compact-2026-01-12", "thinking-binding-controls-2026-08-01"],
+      fallbacks: "default",
+      // Resume conversas muito longas automaticamente.
+      context_management: { edits: [{ type: "compact_20260112" }] },
+    };
   }
 
   async limpar(id) {
@@ -154,11 +204,11 @@ export class Cerebro {
   }
 
   // Envia uma mensagem e devolve { texto, acoes }. Com "aoTexto", o texto vai chegando em tempo real.
-  async conversar(id, textoUsuario, aoTexto = null, { aparelho = "", anexo = null } = {}) {
+  async conversar(id, textoUsuario, aoTexto = null, { aparelho = "", anexo = null, contexto = "" } = {}) {
     // Conversas antigas podem ter o marcador técnico gravado: limpa antes de mandar de novo.
     const mensagens = (await this.banco.obterConversa(id)).map((m) => (m.role === "assistant" ? { ...m, content: limparMarcadores(m.content) } : m));
     const ondeEsta = aparelho === "celular" || aparelho === "computador" ? ` [Aparelho: ${aparelho}]` : "";
-    const textoComHora = `[Agora: ${this.agora()}]${ondeEsta}\n${textoUsuario}`;
+    const textoComHora = `[Agora: ${this.agora()}]${ondeEsta}${contexto ? `\n${contexto}` : ""}\n${textoUsuario}`;
     if (anexo) {
       // Foto ou PDF de documento: vai junto com a pergunta só nesta vez (no histórico fica um aviso).
       validarImagem(anexo, { aceitarPdf: true });
@@ -194,23 +244,18 @@ export class Cerebro {
     for (let volta = 0; volta < MAX_VOLTAS; volta++) {
       if (repassar && jaEscreveu && volta > 0) aoTexto("\n");
       filtro.reiniciar();
-      const resposta = await this.#pedir({
-        model: MODELO,
-        max_tokens: 16000,
-        system: this.sistema,
-        tools: this.tools,
-        messages: mensagens,
-        output_config: { effort: ESFORCO },
-        // Quando o Jarvis é atualizado (instruções ou ferramentas novas), o raciocínio salvo nas
-        // conversas antigas deixa de valer. "drop_block" descarta esse raciocínio antigo em vez de dar erro.
-        thinking: { type: "adaptive", block_binding: { prefix_mismatch_behavior: "drop_block" } },
-        cache_control: { type: "ephemeral" },
-        // Se o modelo recusar por engano, o próprio servidor tenta outro modelo.
-        betas: ["server-side-fallback-2026-07-01", "compact-2026-01-12", "thinking-binding-controls-2026-08-01"],
-        fallbacks: "default",
-        // Resume conversas muito longas automaticamente.
-        context_management: { edits: [{ type: "compact_20260112" }] },
-      }, repassar);
+      let resposta;
+      try {
+        resposta = await this.#pedir(this.#pedidoPara(this.modeloAtual, mensagens), repassar);
+      } catch (erro) {
+        // Rede de segurança: o modelo mais barato recusou o pedido (400/404) antes de escrever algo.
+        const recusouPedido = erro instanceof Anthropic.BadRequestError || erro instanceof Anthropic.NotFoundError;
+        if (!this.modeloReserva || this.modeloAtual === this.modeloReserva || !recusouPedido || jaEscreveu) throw erro;
+        console.error(`Modelo ${this.modeloAtual} falhou; usando ${this.modeloReserva} por 1 hora:`, erro.message);
+        this.reservaAte = Date.now() + RESERVA_MS;
+        filtro.reiniciar();
+        resposta = await this.#pedir(this.#pedidoPara(this.modeloReserva, mensagens), repassar);
+      }
       if (repassar) { const resto = filtro.terminar(); if (resto) { jaEscreveu = true; aoTexto(resto); } }
 
       if (resposta.input_transformations?.length) {

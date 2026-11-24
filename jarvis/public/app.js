@@ -176,7 +176,7 @@ async function tratarNaoAutorizado(dados) {
 
 // Perfil de quem está usando: "adulto" ou "estudante" (Modo Escola). As chamadas esperam saber o perfil.
 let perfil = "adulto";
-const PERMITIDOS_ESTUDANTE = new Set(["/api/perfil", "/api/conversa/limpar"]);
+const PERMITIDOS_ESTUDANTE = new Set(["/api/perfil", "/api/conversa/limpar", "/api/escola/progresso"]);
 let perfilPronto = null;
 function carregarPerfil() {
   perfilPronto ||= fetch("/api/perfil", { headers: { "x-jarvis-senha": senha } })
@@ -284,6 +284,7 @@ async function enviar(texto, anexo = null) {
     await falando.terminar();
     ocupado = false;
     definirEstado(null);
+    atualizarPlacar(); // Modo Escola: estrelas novas depois de cada resposta
     if (el.escuta.checked) {
       // Conversa aberta: dá para responder de volta sem dizer "Jarvis" de novo.
       conversaAbertaAte = Date.now() + JANELA_CONVERSA_MS;
@@ -1103,6 +1104,8 @@ const ATALHOS_ESCOLA = [
   { rotulo: "🔬 Ciências", texto: "Me ajuda em ciências: " },
   { rotulo: "🌎 História e Geografia", texto: "Me ajuda em história e geografia: " },
   { rotulo: "🎯 Quiz", enviar: "Vamos fazer um quiz divertido sobre o que eu estou estudando!" },
+  { rotulo: "📅 Tenho prova", texto: "Tenho prova de " },
+  { rotulo: "🏆 Minhas estrelas", enviar: "Quantas estrelas e conquistas eu já tenho?" },
 ];
 function montarAtalhos(lista) {
   const caixa = $("atalhos");
@@ -1139,6 +1142,7 @@ carregarPerfil().then(() => {
   $("notaFoto").hidden = true;
   $("perguntaFoto").placeholder = "Ex.: me ajuda nesse exercício de frações?";
   el.texto.placeholder = "Pergunte ao professor Jarvis...";
+  atualizarPlacar();
   el.conversa.replaceChildren();
   adicionarMensagem("Oi! Eu sou o Jarvis, seu professor particular. Vamos estudar? Você pode mandar a foto do dever, pedir ajuda em qualquer matéria ou treinar inglês comigo!", "jarvis");
 });
@@ -1170,3 +1174,19 @@ $("resumoHora").addEventListener("change", (e) => mudarResumo("mudar_hora", Numb
 $("pularResumo").addEventListener("click", () => mudarResumo("pular_proximo"));
 $("cancelarPuloResumo").addEventListener("click", () => mudarResumo("cancelar_pulo"));
 $("botaoAjustes").addEventListener("click", () => api("/api/resumo").then(mostrarResumo).catch(() => {}));
+
+// ---------- Placar do Modo Escola: estrelas e dias seguidos ----------
+let estrelasMostradas = null;
+async function atualizarPlacar() {
+  if (perfil !== "estudante") return;
+  try {
+    const p = await api("/api/escola/progresso");
+    const placar = $("placarEscola");
+    placar.textContent = `⭐ ${p.estrelas}  🔥 ${p.diasSeguidos}`;
+    placar.hidden = false;
+    if (estrelasMostradas !== null && p.estrelas > estrelasMostradas) {
+      placar.classList.remove("ganhou"); void placar.offsetWidth; placar.classList.add("ganhou");
+    }
+    estrelasMostradas = p.estrelas;
+  } catch {}
+}

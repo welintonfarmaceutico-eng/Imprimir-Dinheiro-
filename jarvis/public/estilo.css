@@ -413,3 +413,20 @@ body[data-perfil="estudante"] .marca::after { content: " · ESCOLA"; font-size: 
 /* Ajustes: liga/desliga e hora do resumo diário na mesma linha */
 .campos label.linha-resumo { display: flex; align-items: center; gap: 8px; color: var(--texto); }
 .campos label.linha-resumo select { width: auto; padding: 6px 10px; }
+
+/* Placar do Modo Escola (estrelas e dias seguidos) */
+.placar {
+  font-family: "Orbitron", sans-serif; font-size: 14px; letter-spacing: .05em; color: var(--acento-claro);
+  padding: 4px 12px; border-radius: 999px; border: 1px solid rgba(var(--acento-rgb), .4); background: rgba(var(--acento-rgb), .1);
+  white-space: nowrap;
+}
+.placar.ganhou { animation: ganhou .9s ease-out; }
+@keyframes ganhou { 0% { transform: scale(1); } 30% { transform: scale(1.35); box-shadow: 0 0 22px #ffd54a; } 100% { transform: scale(1); } }
+body:not([data-perfil="estudante"]) .placar { display: none; }
+@media (max-width: 960px) { .placar { font-size: 12px; padding: 3px 8px; } body[data-perfil="estudante"] .marca::after { content: ""; } }
+@media (max-width: 960px) {
+  header { gap: 6px; }
+  .controles { gap: 6px; }
+  .controles .icone { padding: 4px 8px; }
+  body[data-perfil="estudante"] .marca { font-size: 12px; letter-spacing: .12em; }
+}

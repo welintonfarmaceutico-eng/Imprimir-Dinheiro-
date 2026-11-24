@@ -3,6 +3,7 @@
 
 import { APPS, montarLink } from "./links.js";
 import { alterarResumo } from "./resumo.js";
+import { MATERIAS } from "./escola.js";
 
 const obj = (properties) => ({
   type: "object",
@@ -18,6 +19,7 @@ export const MAX_STRICT = 20;
 const SEM_STRICT = new Set([
   "listar_notas", "listar_lembretes", "resumo_financeiro", "listar_transacoes", "agenda_listar_eventos",
   "consultar_carteira_toledo", "instagram_novidades", "definir_cidade", "documento_pronto", "post_instagram",
+  "meu_progresso", "progresso_escola",
 ]);
 export function comStrict(ferramentas) {
   let usados = 0;
@@ -48,18 +50,72 @@ const DOCUMENTO_PRONTO = {
   },
 };
 
-// Modo Escola: só o documento pronto (listas de exercícios, resumos para estudar).
-export function criarFerramentasEstudante() {
+// Modo Escola: progresso (estrelas), provas e documento pronto (listas de exercícios, resumos).
+export function criarFerramentasEstudante(escola = null) {
+  const lista = [DOCUMENTO_PRONTO];
+  if (escola) {
+    lista.push(
+      {
+        definicao: {
+          name: "registrar_estudo",
+          description:
+            "Registra um exercício ou pergunta de quiz depois de corrigir a resposta da criança. Chame uma vez por item, sem anunciar. " +
+            "resultado: acertou (acertou de primeira), errou (precisou de ajuda ou errou) ou praticou (atividade sem certo/errado, como ler ou conversar em inglês). " +
+            "A resposta traz as estrelas e, às vezes, conquistas novas: comemore as conquistas com ela.",
+          input_schema: obj({
+            materia: { type: "string", enum: MATERIAS },
+            assunto: { type: "string", description: "Assunto curto, ex.: frações equivalentes, verbo to be, ciclo da água" },
+            resultado: { type: "string", enum: ["acertou", "errou", "praticou"] },
+            observacao: { type: "string", description: "Uma frase curta para o pai/mãe sobre como ela foi (\"\" se nada a dizer)" },
+          }),
+        },
+        executar: (input) => escola.registrarEstudo(input),
+      },
+      {
+        definicao: {
+          name: "meu_progresso",
+          description: "Mostra as estrelas, os dias seguidos de estudo e as últimas conquistas da criança. Use quando ela perguntar.",
+          input_schema: obj({}),
+        },
+        executar: () => escola.progresso(),
+      },
+      {
+        definicao: {
+          name: "agendar_prova",
+          description: "Guarda uma prova ou trabalho que a criança contou que vai ter, para o professor ajudar a revisar nos dias antes. Calcule a data a partir do horário atual.",
+          input_schema: obj({
+            materia: { type: "string", enum: MATERIAS },
+            assunto: { type: "string", description: "O que vai cair, se ela souber (\"\" se não souber)" },
+            data: { type: "string", description: "Data da prova no formato AAAA-MM-DD" },
+          }),
+        },
+        executar: (input) => escola.agendarProva(input),
+      },
+      {
+        definicao: {
+          name: "remover_prova",
+          description: "Tira uma prova da lista (já aconteceu, foi cancelada ou foi marcada errado).",
+          input_schema: obj({
+            materia: { type: "string", enum: MATERIAS },
+            data: { type: "string", description: "Data da prova AAAA-MM-DD (\"\" para todas dessa matéria)" },
+          }),
+        },
+        executar: ({ materia, data }) => escola.removerProva({ materia, data: data || undefined }),
+      },
+    );
+  }
+  const porNome = new Map(lista.map((f) => [f.definicao.name, f]));
   return {
-    definicoes: [{ ...DOCUMENTO_PRONTO.definicao, strict: true }],
+    definicoes: comStrict(lista),
     async executar(nome, input) {
-      if (nome !== "documento_pronto") throw new Error(`Ferramenta indisponível no Modo Escola: ${nome}`);
-      return DOCUMENTO_PRONTO.executar(input ?? {});
+      const f = porNome.get(nome);
+      if (!f) throw new Error(`Ferramenta indisponível no Modo Escola: ${nome}`);
+      return f.executar(input ?? {});
     },
   };
 }
 
-export function criarFerramentas(banco, agenda = null, whatsapp = null, computador = null, toledo = null, clima = null, instagram = null) {
+export function criarFerramentas(banco, agenda = null, whatsapp = null, computador = null, toledo = null, clima = null, instagram = null, escola = null) {
   const ferramentas = [
     // ---------- Notas ----------
     {
@@ -245,6 +301,18 @@ export function criarFerramentas(banco, agenda = null, whatsapp = null, computad
         }),
       },
       executar: ({ acao, alvo }) => computador.executar(acao, alvo),
+    });
+  }
+
+  // ---------- Modo Escola: o pai/mãe acompanha o progresso da criança ----------
+  if (escola) {
+    ferramentas.push({
+      definicao: {
+        name: "progresso_escola",
+        description: "Mostra como está o estudo da criança no Modo Escola: estrelas, dias seguidos, exercícios e acertos de hoje, conquistas e provas marcadas.",
+        input_schema: obj({}),
+      },
+      executar: async () => ({ ...(await escola.progresso()), provas: await escola.provasProximas(), relatorioDeHoje: await escola.textoRelatorio() }),
     });
   }
 
