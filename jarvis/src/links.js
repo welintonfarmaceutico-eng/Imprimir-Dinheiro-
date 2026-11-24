@@ -1,8 +1,8 @@
 // Monta o link seguro para abrir um app ou site no aparelho do usuário (no celular Android,
 // esses endereços abrem o próprio app: YouTube, Spotify, Waze, Maps, WhatsApp, telefone).
-// Só gera endereços http(s) conhecidos e "tel:" — nunca um esquema qualquer vindo da IA.
+// Só gera endereços http(s) conhecidos, "tel:" e "sms:" — nunca um esquema qualquer vindo da IA.
 
-export const APPS = ["youtube", "spotify", "waze", "google_maps", "whatsapp", "ligar", "instagram", "netflix", "site", "pesquisa"];
+export const APPS = ["youtube", "spotify", "waze", "google_maps", "whatsapp", "ligar", "sms", "instagram", "netflix", "uber", "ifood", "gmail", "google_agenda", "mercado_livre", "site", "pesquisa"];
 
 const enc = encodeURIComponent;
 const digitos = (s) => String(s ?? "").replace(/\D/g, "");
@@ -62,6 +62,26 @@ export function montarLink({ app, busca = "", numero = "", mensagem = "", nome =
     }
     case "pesquisa":
       return { rotulo: `Pesquisar "${busca}" no Google`, url: `https://www.google.com/search?q=${enc(busca)}` };
+    case "sms": {
+      const d = digitos(numero);
+      if (d.length < 3) throw new Error("Preciso do número de telefone para mandar SMS.");
+      const tel = String(numero).trim().startsWith("+") ? `+${d}` : d;
+      return { rotulo: `SMS para ${nome || numero}`, url: `sms:${tel}${mensagem ? `?body=${enc(mensagem)}` : ""}` };
+    }
+    case "uber":
+      return { rotulo: busca ? `Uber até ${busca}` : "Abrir o Uber", url: busca ? `https://m.uber.com/ul/?action=setPickup&pickup=my_location&dropoff[formatted_address]=${enc(busca)}` : "https://m.uber.com/ul/" };
+    case "ifood":
+      return { rotulo: busca ? `Procurar "${busca}" no iFood` : "Abrir o iFood", url: busca ? `https://www.ifood.com.br/busca?q=${enc(busca)}` : "https://www.ifood.com.br/" };
+    case "gmail": {
+      // Com destinatário ou assunto: abre um e-mail novo já preenchido.
+      const para = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(numero).trim()) ? String(numero).trim() : "";
+      if (para || mensagem) return { rotulo: `Escrever e-mail${para ? ` para ${para}` : ""}`, url: `https://mail.google.com/mail/?view=cm&fs=1${para ? `&to=${enc(para)}` : ""}${busca ? `&su=${enc(busca)}` : ""}${mensagem ? `&body=${enc(mensagem)}` : ""}` };
+      return { rotulo: "Abrir o Gmail", url: "https://mail.google.com/" };
+    }
+    case "google_agenda":
+      return { rotulo: "Abrir o Google Agenda", url: "https://calendar.google.com/" };
+    case "mercado_livre":
+      return { rotulo: busca ? `Procurar "${busca}" no Mercado Livre` : "Abrir o Mercado Livre", url: busca ? `https://lista.mercadolivre.com.br/${enc(busca.replace(/\s+/g, "-"))}` : "https://www.mercadolivre.com.br/" };
     default:
       throw new Error(`App não suportado: ${app}`);
   }

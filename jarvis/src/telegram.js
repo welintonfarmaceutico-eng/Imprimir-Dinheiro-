@@ -76,7 +76,7 @@ export class Telegram {
 
   async enviar(chatId, texto, botoes = []) {
     const teclado = botoes.filter((b) => /^https?:/i.test(b.url)).map((b) => [{ text: b.rotulo, url: b.url }]);
-    const extras = botoes.filter((b) => b.url.startsWith("tel:")).map((b) => `${b.rotulo}: ${b.url.slice(4)}`);
+    const extras = botoes.filter((b) => /^(tel|sms):/.test(b.url)).map((b) => `${b.rotulo}: ${b.url.replace(/^(tel|sms):/, "").split("?")[0]}`);
     const limpo = String(texto ?? "").replace(/\[\/?en\]/gi, ""); // marcas de voz em inglês não aparecem no Telegram
     const corpo = { chat_id: chatId, text: [limpo, ...extras].join("\n").slice(0, 4000) || "Pronto." };
     if (teclado.length) corpo.reply_markup = { inline_keyboard: teclado };

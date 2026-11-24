@@ -1413,3 +1413,70 @@ test("voz: rotas para o adulto e para o Modo Escola", async () => {
   const semChave = criarJarvis(new ArmazemBlobs(blobsFalso()), { senha: "", vozOpcoes: { env: {} } });
   assert.deepEqual(await (await semChave(new Request("http://x/api/voz/vozes"))).json(), { configurado: false, vozes: [] });
 });
+
+// ---------- Contatos do Jarvis (só do adulto) e apps novos ----------
+import { Contatos } from "../src/contatos.js";
+
+test("contatos: salvar, apelido, busca sem acento e importação do celular", async () => {
+  const c = new Contatos(new ArmazemBlobs(blobsFalso()));
+  await c.salvar({ nome: "Maria Souza", telefone: "(38) 99999-0000", apelido: "" });
+  await c.salvar({ nome: "Maria Souza", telefone: "", apelido: "mãe" });
+  await c.salvar({ nome: "João Lima", telefone: "+55 38 98888-1111", apelido: "meu irmão" });
+  await c.salvar({ nome: "Mariana", telefone: "38 97777-2222", apelido: "" });
+  assert.deepEqual((await c.buscar("mae"))[0], { nome: "Maria Souza", telefones: ["38999990000"], apelidos: ["mãe"] });
+  assert.deepEqual((await c.buscar("joao")).map((x) => x.telefones), [["+5538988881111"]]);
+  assert.deepEqual((await c.buscar("meu irmão")).map((x) => x.nome), ["João Lima"]);
+  assert.deepEqual((await c.buscar("Maria")).map((x) => x.nome), ["Maria Souza", "Mariana"], "começo de nome, mais de um: o Jarvis pergunta qual");
+  await assert.rejects(c.salvar({ nome: "X", telefone: "12" }), /não parece válido/);
+
+  const r = await c.importar([
+    { nome: "Maria Souza", telefones: ["38 3333-4444"] }, // junta com o que já tinha
+    { nome: "Padaria Central", telefones: ["(38) 3222-1010"] },
+    { nome: "Sem telefone", telefones: [] },
+  ]);
+  assert.deepEqual(r, { importados: 2, total: 4 });
+  assert.deepEqual((await c.buscar("maria souza"))[0].telefones, ["38999990000", "3833334444"]);
+  assert.deepEqual(await c.apagar("Padaria Central"), { apagado: true, nome: "Padaria Central" });
+  assert.equal((await c.apagarTodos()).apagados, 3);
+});
+
+test("contatos: ferramenta do adulto, rotas bloqueadas para o Modo Escola", async () => {
+  const armazem = new ArmazemBlobs(blobsFalso());
+  const contatos = new Contatos(armazem);
+  const f = criarFerramentas(novoBanco(), null, null, null, null, null, null, null, contatos);
+  await f.executar("contatos", { acao: "salvar", nome: "Ana", telefone: "38 91234-5678", apelido: "" });
+  assert.equal((await f.executar("contatos", { acao: "buscar", nome: "ana", telefone: "", apelido: "" })).contatos[0].telefones[0], "38912345678");
+  assert.match((await f.executar("contatos", { acao: "buscar", nome: "Zé", telefone: "", apelido: "" })).aviso, /Nenhum contato/);
+  assert.ok(!criarFerramentasEstudante().definicoes.some((d) => d.name === "contatos"), "o Modo Escola não tem a ferramenta");
+
+  const tratar = criarJarvis(armazem, { senha: "pai", senhaEstudante: "filha" });
+  const pedir = (m, c, s, corpo) => tratar(new Request(`http://x${c}`, { method: m, headers: { "x-jarvis-senha": s }, body: m === "GET" ? undefined : JSON.stringify(corpo || {}) }));
+  assert.deepEqual(await (await pedir("GET", "/api/contatos", "pai")).json(), { quantidade: 1 });
+  for (const [m, c] of [["GET", "/api/contatos"], ["POST", "/api/contatos/importar"], ["POST", "/api/contatos/apagar-todos"]]) {
+    assert.equal((await pedir(m, c, "filha")).status, 403, `${c} bloqueado para o Modo Escola`);
+  }
+  const imp = await (await pedir("POST", "/api/contatos/importar", "pai", { contatos: [{ nome: "Bia", telefones: ["38 90000-0000"] }] })).json();
+  assert.deepEqual(imp, { importados: 1, total: 2 });
+});
+
+test("links: SMS, Uber, iFood, Gmail, Agenda e Mercado Livre; Telegram mostra o SMS como texto", async () => {
+  assert.equal(montarLink({ app: "sms", numero: "38 99999-0000", mensagem: "Chego já", nome: "Maria" }).url, "sms:38999990000?body=Chego%20j%C3%A1");
+  assert.match(montarLink({ app: "uber", busca: "Rodoviária de Montes Claros" }).url, /^https:\/\/m\.uber\.com\/ul\/\?action=setPickup&pickup=my_location&dropoff\[formatted_address\]=Rodovi/);
+  assert.equal(montarLink({ app: "ifood", busca: "pizza" }).url, "https://www.ifood.com.br/busca?q=pizza");
+  assert.equal(montarLink({ app: "gmail", busca: "Reunião", numero: "ana@exemplo.com", mensagem: "Oi" }).url, "https://mail.google.com/mail/?view=cm&fs=1&to=ana%40exemplo.com&su=Reuni%C3%A3o&body=Oi");
+  assert.equal(montarLink({ app: "gmail" }).url, "https://mail.google.com/");
+  assert.equal(montarLink({ app: "google_agenda" }).url, "https://calendar.google.com/");
+  assert.equal(montarLink({ app: "mercado_livre", busca: "fone bluetooth" }).url, "https://lista.mercadolivre.com.br/fone-bluetooth");
+  assert.throws(() => montarLink({ app: "sms", numero: "" }), /número/);
+
+  const tg = telegramFalso();
+  const telegram = new Telegram(new ArmazemBlobs(blobsFalso()), { fetch: tg.f, env: { TELEGRAM_BOT_TOKEN: "1:X" } });
+  await telegram.enviar(1, "Pronto.", [{ rotulo: "SMS para Maria", url: "sms:38999990000?body=oi" }]);
+  assert.equal(tg.enviadas().at(-1).text, "Pronto.\nSMS para Maria: 38999990000");
+});
+
+test("ferramentas: com contatos e escola, o limite de strict continua respeitado", () => {
+  const tudo = criarFerramentas(novoBanco(), { configurado: true }, { configurado: true }, { executar() {} }, { configurado: true }, {}, { configurado: true }, {}, {});
+  assert.ok(tudo.definicoes.filter((d) => d.strict).length <= MAX_STRICT);
+  assert.ok(tudo.definicoes.some((d) => d.name === "contatos" && d.strict));
+});
