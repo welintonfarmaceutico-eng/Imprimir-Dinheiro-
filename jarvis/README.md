@@ -136,6 +136,10 @@ No 📷, escolha uma foto ou um PDF (até 5 MB) e toque em **Analisar documento*
 
 "Me lembra de tomar o remédio todo dia às 8h", "de segunda a sexta às 7h", "toda segunda" ou "todo dia 10". Cinco minutos depois de cada aviso, o lembrete passa para a próxima vez. Para parar, peça para concluir o lembrete. No botão "+ Lembrete" também tem a opção "Repetir".
 
+## Banco de vozes (Google Cloud Text-to-Speech)
+
+Vozes naturais, iguais em todos os aparelhos. No Google Cloud (mesmo projeto do Agenda): ative a **Cloud Text-to-Speech API**, crie uma **chave de API** restrita a essa API e coloque no Cloudflare como segredo `GOOGLE_TTS_KEY`. Em ⚙ Ajustes → Voz aparecem o **Banco de vozes** (português) e a **Voz para o inglês**; escolher uma já toca um exemplo. O áudio é buscado frase por frase enquanto a anterior toca; se o Google falhar ou a cota acabar, a fala volta sozinha para a voz do navegador. O Google tem cota grátis mensal por tipo de voz; confira os valores atuais na página de preços do Text-to-Speech e, se quiser, crie um alerta de orçamento no Faturamento.
+
 ## Telegram (e Android Auto)
 
 Converse com o Jarvis pelo Telegram, de qualquer lugar. No carro, o Android Auto lê as respostas em voz alta e você responde ditando.

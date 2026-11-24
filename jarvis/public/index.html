@@ -159,7 +159,14 @@
         <div class="temas formatos" id="formatos"></div>
 
         <h4 class="secao">🔊 Voz</h4>
-        <label><span>Voz</span>
+        <label id="linhaBanco" hidden><span>Banco de vozes (Google)</span>
+          <select id="vozGoogle"></select>
+        </label>
+        <label id="linhaVozIngles" hidden><span>Voz para o inglês</span>
+          <select id="vozGoogleIngles"></select>
+        </label>
+        <p class="nota-pc" id="statusVoz"></p>
+        <label><span id="rotuloVozNavegador">Voz</span>
           <select id="escolhaVoz"><option value="">Automática</option></select>
         </label>
         <label><span>Velocidade da fala: <b id="valorVelocidade">1,05×</b></span>

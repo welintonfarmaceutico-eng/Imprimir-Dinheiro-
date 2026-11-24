@@ -1360,3 +1360,56 @@ test("cérebro: se o modelo barato recusar o pedido, refaz no modelo principal e
   await cerebro.conversar("e1", "tudo bem?");
   assert.equal(cerebro.cliente.pedidos[2].model, "claude-opus-5-5", "fica no principal por um tempo");
 });
+
+// ---------- Banco de vozes (Google Text-to-Speech simulado) ----------
+import { Voz } from "../src/voz.js";
+
+function googleTtsFalso() {
+  const pedidos = [];
+  const f = async (url, opcoes = {}) => {
+    pedidos.push({ url, corpo: opcoes.body ? JSON.parse(opcoes.body) : null });
+    if (url.includes("key=errada")) return Response.json({ error: { message: "API key not valid" } }, { status: 403 });
+    if (url.includes("/voices")) return Response.json({ voices: [
+      { name: "pt-BR-Standard-A", languageCodes: ["pt-BR"], ssmlGender: "FEMALE" },
+      { name: "pt-BR-Neural2-B", languageCodes: ["pt-BR"], ssmlGender: "MALE" },
+      { name: "pt-BR-Chirp3-HD-Orus", languageCodes: ["pt-BR"], ssmlGender: "MALE" },
+      { name: "en-GB-Neural2-B", languageCodes: ["en-GB"], ssmlGender: "MALE" },
+      { name: "fr-FR-Neural2-A", languageCodes: ["fr-FR"], ssmlGender: "FEMALE" },
+    ] });
+    return Response.json({ audioContent: Buffer.from("mp3 falso").toString("base64") });
+  };
+  return { f, pedidos };
+}
+
+test("voz: lista o banco (mais naturais primeiro) e gera o áudio da fala", async () => {
+  const g = googleTtsFalso();
+  const voz = new Voz({ fetch: g.f, env: { GOOGLE_TTS_KEY: "chave" } });
+  const vozes = await voz.vozes();
+  assert.deepEqual(vozes.map((v) => v.nome), ["en-GB-Neural2-B", "pt-BR-Chirp3-HD-Orus", "pt-BR-Neural2-B", "pt-BR-Standard-A"]);
+  assert.equal(vozes[1].genero, "masculina");
+  await voz.vozes();
+  assert.equal(g.pedidos.filter((p) => p.url.includes("/voices")).length, 1, "a lista fica guardada");
+
+  const audio = await voz.falar({ texto: "Olá, Welinton.", voz: "pt-BR-Neural2-B", velocidade: 1.05 });
+  assert.equal(audio.toString(), "mp3 falso");
+  const pedido = g.pedidos.at(-1);
+  assert.match(pedido.url, /text:synthesize\?key=chave$/);
+  assert.deepEqual(pedido.corpo, { input: { text: "Olá, Welinton." }, voice: { languageCode: "pt-BR", name: "pt-BR-Neural2-B" }, audioConfig: { audioEncoding: "MP3", speakingRate: 1.05 } });
+  await assert.rejects(voz.falar({ texto: "x", voz: "../../hack" }), /Voz inválida/);
+  await assert.rejects(new Voz({ fetch: g.f, env: { GOOGLE_TTS_KEY: "errada" } }).vozes(), /Text-to-Speech API/);
+  assert.deepEqual(await new Voz({ env: {} }).vozes(), []);
+});
+
+test("voz: rotas para o adulto e para o Modo Escola", async () => {
+  const g = googleTtsFalso();
+  const tratar = criarJarvis(new ArmazemBlobs(blobsFalso()), { senha: "pai", senhaEstudante: "filha", vozOpcoes: { fetch: g.f, env: { GOOGLE_TTS_KEY: "chave" } } });
+  const pedir = (m, c, s, corpo) => tratar(new Request(`http://x${c}`, { method: m, headers: { "x-jarvis-senha": s }, body: corpo && JSON.stringify(corpo) }));
+  for (const s of ["pai", "filha"]) {
+    assert.equal((await (await pedir("GET", "/api/voz/vozes", s)).json()).vozes.length, 4);
+    const r = await pedir("POST", "/api/voz/falar", s, { texto: "Oi!", voz: "pt-BR-Neural2-B" });
+    assert.equal(r.headers.get("content-type"), "audio/mpeg");
+  }
+  assert.equal((await pedir("POST", "/api/voz/falar", "errada", { texto: "Oi!", voz: "pt-BR-Neural2-B" })).status, 401);
+  const semChave = criarJarvis(new ArmazemBlobs(blobsFalso()), { senha: "", vozOpcoes: { env: {} } });
+  assert.deepEqual(await (await semChave(new Request("http://x/api/voz/vozes"))).json(), { configurado: false, vozes: [] });
+});
