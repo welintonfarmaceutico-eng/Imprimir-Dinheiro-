@@ -15,6 +15,7 @@ import { registrarNotaFiscal, validarImagem } from "./notaFiscal.js";
 import { Telegram } from "./telegram.js";
 import { Instagram } from "./instagram.js";
 import { Escola } from "./escola.js";
+import { Voz } from "./voz.js";
 import { Toledo } from "./toledo.js";
 
 const json = (dados, status = 200) => Response.json(dados, { status });
@@ -55,7 +56,7 @@ export function explicarErro(erro) {
   return { mensagem: `Tive um problema para pensar agora. Tente de novo em instantes.${detalhe ? ` (Detalhe técnico: ${detalhe})` : ""}` };
 }
 
-export function criarJarvis(armazem, { senha = process.env.JARVIS_SENHA || "", senhaEstudante = process.env.JARVIS_SENHA_ESTUDANTE || "", cliente = null, computadorOpcoes = {}, telegramOpcoes = {} } = {}) {
+export function criarJarvis(armazem, { senha = process.env.JARVIS_SENHA || "", senhaEstudante = process.env.JARVIS_SENHA_ESTUDANTE || "", cliente = null, computadorOpcoes = {}, telegramOpcoes = {}, vozOpcoes = {} } = {}) {
   definirFuso();
   const banco = new Banco(armazem);
   const agenda = new GoogleAgenda(armazem);
@@ -66,6 +67,7 @@ export function criarJarvis(armazem, { senha = process.env.JARVIS_SENHA || "", s
   const telegram = new Telegram(armazem, telegramOpcoes);
   const instagram = new Instagram(armazem);
   const escola = new Escola(armazem);
+  const voz = new Voz(vozOpcoes);
   const cerebro = new Cerebro(criarFerramentas(banco, agenda, whatsapp, computador, toledo, clima, instagram, escola), banco);
   // Modo Escola: professor particular, sem nenhuma ferramenta do adulto (finanças, Toledo, PC, WhatsApp...).
   // Usa um modelo mais barato (Haiku); se ele falhar, refaz no modelo principal (rede de segurança).
@@ -259,6 +261,24 @@ export function criarJarvis(armazem, { senha = process.env.JARVIS_SENHA || "", s
     const quem = perfil(req);
     if (!quem) return json({ erro: "Senha incorreta" }, 401);
     if (rota === "GET /api/perfil") return json({ perfil: quem });
+
+    // Banco de vozes (adulto e Modo Escola).
+    if (rota === "GET /api/voz/vozes") {
+      if (!voz.configurado) return json({ configurado: false, vozes: [] });
+      try {
+        return json({ configurado: true, vozes: await voz.vozes() });
+      } catch (erro) {
+        return json({ configurado: true, vozes: [], erro: erro.message });
+      }
+    }
+    if (rota === "POST /api/voz/falar") {
+      try {
+        const audio = await voz.falar(await corpo(req));
+        return new Response(audio, { headers: { "content-type": "audio/mpeg", "cache-control": "private, max-age=86400" } });
+      } catch (erro) {
+        return json({ erro: erro.message }, 400);
+      }
+    }
     if (quem === "estudante") {
       // Modo Escola: só a conversa com o professor (com foto do exercício). O resto é bloqueado.
       if (rota === "POST /api/conversar/ao-vivo") return conversarAoVivo(req, cerebroEstudante, "escola-", await escola.contexto());

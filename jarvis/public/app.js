@@ -176,7 +176,7 @@ async function tratarNaoAutorizado(dados) {
 
 // Perfil de quem está usando: "adulto" ou "estudante" (Modo Escola). As chamadas esperam saber o perfil.
 let perfil = "adulto";
-const PERMITIDOS_ESTUDANTE = new Set(["/api/perfil", "/api/conversa/limpar", "/api/escola/progresso"]);
+const PERMITIDOS_ESTUDANTE = new Set(["/api/perfil", "/api/conversa/limpar", "/api/escola/progresso", "/api/voz/vozes"]);
 let perfilPronto = null;
 function carregarPerfil() {
   perfilPronto ||= fetch("/api/perfil", { headers: { "x-jarvis-senha": senha } })
@@ -325,22 +325,74 @@ const falando = {
       else this.falarTrecho(parte, this.emIngles);
     }
   },
+  // Fila própria: cada trecho é falado pelo banco de vozes (Google) ou, sem ele, pela voz do navegador.
+  // O áudio do banco começa a ser buscado na hora, enquanto o trecho anterior ainda está tocando.
+  fila: [],
+  tocando: false,
+  geracao: 0, // muda a cada "cancelar", para descartar o que ainda estava a caminho
+  audioAtual: null,
+  bancoDisponivel: false,
+  vozDoBanco(ingles) {
+    if (!this.bancoDisponivel) return "";
+    const pt = guardar.ler("jarvis.vozGoogle", "");
+    if (!pt) return "";
+    return ingles ? guardar.ler("jarvis.vozGoogleIngles", "") || "en-GB-Neural2-B" : pt;
+  },
+  buscarAudio(texto, voz) {
+    return fetch("/api/voz/falar", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-jarvis-senha": senha },
+      body: JSON.stringify({ texto, voz, velocidade: this.velocidade }),
+    }).then((r) => (r.ok ? r.blob() : Promise.reject(new Error(`voz ${r.status}`))));
+  },
   falarTrecho(texto, ingles) {
-    texto = String(texto ?? "").replace(/^[\s.,;:!?…]+/, ""); // pontuação solta no começo de um trecho
-    if (!el.voz.checked || !("speechSynthesis" in window) || !/[\p{L}\p{N}]/u.test(texto)) return;
-    const fala = new SpeechSynthesisUtterance(texto.trim());
-    fala.lang = ingles ? "en-US" : "pt-BR";
-    const voz = ingles ? this.vozIngles() : this.voz;
-    if (voz) fala.voice = voz;
-    fala.rate = this.velocidade;
-    fala.onstart = () => definirEstado("falando");
-    fala.onboundary = () => pulsar(1.2);
-    fala.onend = fala.onerror = () => {
-      this.pendentes = Math.max(0, this.pendentes - 1);
-      if (!this.pendentes) this.aoTerminar.splice(0).forEach((f) => f());
-    };
+    texto = String(texto ?? "").replace(/^[\s.,;:!?…]+/, "").trim(); // pontuação solta no começo de um trecho
+    if (!el.voz.checked || !/[\p{L}\p{N}]/u.test(texto)) return;
+    const voz = this.vozDoBanco(ingles);
+    this.fila.push({ texto, ingles, audio: voz ? this.buscarAudio(texto, voz).catch(() => null) : null });
     this.pendentes++;
-    speechSynthesis.speak(fala);
+    if (!this.tocando) this.tocarProximo();
+  },
+  async tocarProximo() {
+    const item = this.fila.shift();
+    if (!item) { this.tocando = false; return; }
+    this.tocando = true;
+    const geracao = this.geracao;
+    const blob = item.audio ? await item.audio : null;
+    if (geracao !== this.geracao) return; // foi cancelado enquanto buscava o áudio
+    const tocou = blob ? await this.tocarAudio(blob) : false;
+    if (!tocou && geracao === this.geracao) await this.falarNavegador(item.texto, item.ingles); // sem banco ou deu erro
+    if (geracao !== this.geracao) return;
+    this.pendentes = Math.max(0, this.pendentes - 1);
+    if (!this.pendentes) this.aoTerminar.splice(0).forEach((f) => f());
+    this.tocarProximo();
+  },
+  tocarAudio(blob) {
+    return new Promise((resolve) => {
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      this.audioAtual = audio;
+      let pulso = null;
+      const fim = (ok) => { clearInterval(pulso); URL.revokeObjectURL(url); if (this.audioAtual === audio) this.audioAtual = null; resolve(ok); };
+      audio.onplaying = () => { definirEstado("falando"); clearInterval(pulso); pulso = setInterval(() => pulsar(1.15), 220); };
+      audio.onended = () => fim(true);
+      audio.onerror = () => fim(false);
+      audio.play().catch(() => fim(false)); // celular bloqueou o som: usa a voz do navegador
+    });
+  },
+  falarNavegador(texto, ingles) {
+    return new Promise((resolve) => {
+      if (!("speechSynthesis" in window)) return resolve();
+      const fala = new SpeechSynthesisUtterance(texto);
+      fala.lang = ingles ? "en-US" : "pt-BR";
+      const voz = ingles ? this.vozIngles() : this.voz;
+      if (voz) fala.voice = voz;
+      fala.rate = this.velocidade;
+      fala.onstart = () => definirEstado("falando");
+      fala.onboundary = () => pulsar(1.2);
+      fala.onend = fala.onerror = () => resolve();
+      speechSynthesis.speak(fala);
+    });
   },
   // Promessa que termina quando tudo o que está na fila foi falado.
   terminar() {
@@ -349,6 +401,10 @@ const falando = {
   },
   falar(texto) { this.enfileirar(texto); return this.terminar(); },
   cancelar() {
+    this.geracao++;
+    this.fila = [];
+    this.tocando = false;
+    if (this.audioAtual) { this.audioAtual.pause(); this.audioAtual = null; }
     if ("speechSynthesis" in window) speechSynthesis.cancel();
     this.emIngles = false;
     this.pendentes = 0;
@@ -1190,3 +1246,50 @@ async function atualizarPlacar() {
     estrelasMostradas = p.estrelas;
   } catch {}
 }
+
+// ---------- Banco de vozes (Google Cloud Text-to-Speech) ----------
+const NOMES_FAMILIA = { "Chirp3-HD": "HD, a mais natural", "Chirp-HD": "HD", Studio: "estúdio", Neural2: "neural", Wavenet: "WaveNet", Standard: "padrão" };
+const rotuloVoz = (v) => `${v.nome.replace(/^[a-z]{2}-[A-Z]{2}-/, "")} · ${v.genero} · ${NOMES_FAMILIA[v.familia] || v.familia}${v.idioma === "en-GB" ? " · britânica" : v.idioma === "en-US" ? " · americana" : ""}`;
+async function carregarBancoDeVozes() {
+  try {
+    const r = await api("/api/voz/vozes");
+    if (!r.configurado || !r.vozes.length) {
+      $("statusVoz").textContent = r.erro ? `⚠️ ${r.erro}` : "Vozes mais naturais: configure o banco de vozes do Google (GOOGLE_TTS_KEY).";
+      $("linhaBanco").hidden = $("linhaVozIngles").hidden = true;
+      falando.bancoDisponivel = false;
+      return;
+    }
+    falando.bancoDisponivel = true;
+    const pt = r.vozes.filter((v) => v.idioma === "pt-BR");
+    const en = r.vozes.filter((v) => v.idioma !== "pt-BR");
+    // Primeira vez: já escolhe uma voz masculina natural (dá para trocar).
+    if (guardar.ler("jarvis.vozGoogle", null) === null && pt.length) {
+      const padrao = pt.find((v) => v.genero === "masculina" && /Neural2|Chirp3/.test(v.familia)) || pt[0];
+      guardar.escrever("jarvis.vozGoogle", padrao.nome);
+    }
+    const escolhaPt = guardar.ler("jarvis.vozGoogle", "");
+    const escolhaEn = guardar.ler("jarvis.vozGoogleIngles", "") || "en-GB-Neural2-B";
+    $("vozGoogle").replaceChildren(
+      new Option("Desligado (usar a voz do navegador)", "", false, !escolhaPt),
+      ...pt.map((v) => new Option(rotuloVoz(v), v.nome, false, v.nome === escolhaPt)),
+    );
+    $("vozGoogleIngles").replaceChildren(...en.map((v) => new Option(rotuloVoz(v), v.nome, false, v.nome === escolhaEn)));
+    $("linhaBanco").hidden = false;
+    $("linhaVozIngles").hidden = !escolhaPt;
+    $("rotuloVozNavegador").textContent = "Voz do navegador (reserva)";
+    $("statusVoz").textContent = escolhaPt ? "🟢 Banco de vozes ligado. Se ele falhar, o Jarvis usa a voz do navegador." : "";
+  } catch {}
+}
+$("vozGoogle").addEventListener("change", (e) => {
+  guardar.escrever("jarvis.vozGoogle", e.target.value);
+  carregarBancoDeVozes();
+  falando.cancelar();
+  falando.falar("Olá! Esta é a minha nova voz.");
+});
+$("vozGoogleIngles").addEventListener("change", (e) => {
+  guardar.escrever("jarvis.vozGoogleIngles", e.target.value);
+  falando.cancelar();
+  falando.falar("E em inglês: [en]Hello! How are you today?[/en]");
+});
+$("botaoAjustes").addEventListener("click", carregarBancoDeVozes);
+carregarBancoDeVozes();
