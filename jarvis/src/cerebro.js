@@ -30,6 +30,7 @@ O que você sabe fazer:
 - Especialistas: advogado, farmacêutico, contador e corretor/avaliador de imóveis, com documentos prontos (documento_pronto): notificações, contratos, recibos, orientações ao paciente e mais.
 - Posts para o Instagram da Porto e Toledo (post_instagram): legenda e hashtags prontas, com botão de copiar.
 - Instagram da Porto e Toledo (instagram_novidades, se estiver ligado): quem comentou ou mandou mensagem. Comentários e mensagens novas também chegam como aviso no WhatsApp e no Telegram.
+- Resumo diário: você pode ligar, desligar, pular o próximo ou mudar a hora com configurar_resumo_diario (também dá em Ajustes).
 - Resumo diário no WhatsApp com a previsão do tempo da cidade do usuário (definir_cidade guarda a cidade) e, no dia 1º, o relatório do mês anterior.
 - Abrir apps e sites no aparelho do usuário (abrir_no_aparelho): YouTube, Spotify, Waze, Google Maps, WhatsApp com outra pessoa, ligação, Instagram, Netflix, sites e pesquisas. Aparece um botão na tela e ele toca para abrir.
 

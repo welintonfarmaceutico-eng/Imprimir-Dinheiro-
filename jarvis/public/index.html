@@ -168,7 +168,18 @@
 
         <h4 class="secao so-adulto">🔌 Conexões</h4>
         <div class="conexao"><b>Google Agenda</b><p class="nota-pc" id="statusGoogle">Verificando...</p></div>
-        <div class="conexao"><b>WhatsApp (avisos)</b><p class="nota-pc" id="statusWhatsapp">Verificando...</p></div>
+        <div class="conexao">
+          <b>WhatsApp (avisos)</b>
+          <p class="nota-pc" id="statusWhatsapp">Verificando...</p>
+          <label class="chave linha-resumo"><input type="checkbox" id="resumoLigado" /> <span>Resumo diário às</span>
+            <select id="resumoHora" aria-label="Hora do resumo"></select>
+          </label>
+          <p class="nota-pc" id="statusResumo"></p>
+          <div class="linha">
+            <button type="button" class="botao-sec" id="pularResumo">⏭ Pular o próximo</button>
+            <button type="button" class="botao-sec" id="cancelarPuloResumo" hidden>↩ Não pular</button>
+          </div>
+        </div>
         <div class="conexao">
           <b>Telegram (e Android Auto)</b>
           <p class="nota-pc" id="statusTelegram">Verificando...</p>

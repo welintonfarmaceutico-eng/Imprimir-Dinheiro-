@@ -118,6 +118,8 @@ A cada minuto, a função agendada `lembretes-whatsapp` confere os lembretes que
 
 Todo dia, às 7h (ou na hora de `JARVIS_RESUMO_HORA`), chega no WhatsApp um resumo com os compromissos do Google Agenda, os lembretes do dia e as finanças do mês. O resumo é montado sem a IA, então **não gasta crédito da Anthropic**. Se o Google Agenda estiver desconectado, o resumo avisa para reconectar.
 
+**Ligar, desligar, pular e mudar a hora:** peça ao Jarvis ("desliga o resumo diário", "pula o resumo de amanhã", "muda o resumo para as 8h") ou use ⚙ Ajustes → WhatsApp. Vale para o WhatsApp e o Telegram, e o relatório do mês segue o mesmo liga/desliga. O que for escolhido fica guardado e vale mais que `JARVIS_RESUMO_HORA`.
+
 **Previsão do tempo:** diga ao Jarvis "minha cidade é Montes Claros, MG" e a previsão do dia entra no resumo (serviço gratuito Open-Meteo, sem chave).
 
 **Relatório do mês:** no dia 1º, junto com o resumo, chega o relatório do mês anterior: entradas, saídas, saldo, maiores gastos e a comparação com o mês de antes.
