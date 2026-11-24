@@ -16,6 +16,7 @@ import { Telegram } from "./telegram.js";
 import { Instagram } from "./instagram.js";
 import { Escola } from "./escola.js";
 import { Voz } from "./voz.js";
+import { Contatos } from "./contatos.js";
 import { Toledo } from "./toledo.js";
 
 const json = (dados, status = 200) => Response.json(dados, { status });
@@ -68,7 +69,8 @@ export function criarJarvis(armazem, { senha = process.env.JARVIS_SENHA || "", s
   const instagram = new Instagram(armazem);
   const escola = new Escola(armazem);
   const voz = new Voz(vozOpcoes);
-  const cerebro = new Cerebro(criarFerramentas(banco, agenda, whatsapp, computador, toledo, clima, instagram, escola), banco);
+  const contatos = new Contatos(armazem); // só o adulto (o Modo Escola não chega nas rotas nem na ferramenta)
+  const cerebro = new Cerebro(criarFerramentas(banco, agenda, whatsapp, computador, toledo, clima, instagram, escola, contatos), banco);
   // Modo Escola: professor particular, sem nenhuma ferramenta do adulto (finanças, Toledo, PC, WhatsApp...).
   // Usa um modelo mais barato (Haiku); se ele falhar, refaz no modelo principal (rede de segurança).
   const cerebroEstudante = new Cerebro(criarFerramentasEstudante(escola), banco, {
@@ -399,6 +401,16 @@ export function criarJarvis(armazem, { senha = process.env.JARVIS_SENHA || "", s
         return json({ ok: true });
       case "GET /api/escola/progresso":
         return json({ ...(await escola.progresso()), provas: await escola.provasProximas() });
+      case "GET /api/contatos":
+        return json({ quantidade: await contatos.quantidade() });
+      case "POST /api/contatos/importar":
+        try {
+          return json(await contatos.importar((await corpo(req)).contatos));
+        } catch (erro) {
+          return json({ erro: erro.message }, 400);
+        }
+      case "POST /api/contatos/apagar-todos":
+        return json(await contatos.apagarTodos());
       case "GET /api/resumo":
         return json(await alterarResumo(armazem, { acao: "ver" }));
       case "POST /api/resumo":

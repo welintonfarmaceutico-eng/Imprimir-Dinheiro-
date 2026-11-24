@@ -67,12 +67,12 @@ function mostrarBotoes(botoes) {
   const caixa = document.createElement("div");
   caixa.className = "botoes-acao";
   for (const b of botoes) {
-    if (typeof b?.url !== "string" || !/^(https?:|tel:)/i.test(b.url)) continue;
+    if (typeof b?.url !== "string" || !/^(https?:|tel:|sms:)/i.test(b.url)) continue;
     const a = document.createElement("a");
     a.className = "botao botao-acao";
     a.href = b.url;
     a.textContent = `▶ ${b.rotulo || "Abrir"}`;
-    if (!b.url.startsWith("tel:")) { a.target = "_blank"; a.rel = "noopener noreferrer"; }
+    if (!/^(tel|sms):/.test(b.url)) { a.target = "_blank"; a.rel = "noopener noreferrer"; }
     caixa.appendChild(a);
   }
   if (!caixa.children.length) return;
@@ -1293,3 +1293,34 @@ $("vozGoogleIngles").addEventListener("change", (e) => {
 });
 $("botaoAjustes").addEventListener("click", carregarBancoDeVozes);
 carregarBancoDeVozes();
+
+// ---------- Contatos do Jarvis (só o adulto; o celular mostra o seletor e você escolhe quais) ----------
+const temSeletorDeContatos = "contacts" in navigator && "ContactsManager" in window;
+async function atualizarContatos() {
+  if (perfil === "estudante") return;
+  try {
+    const { quantidade } = await api("/api/contatos");
+    $("statusContatos").textContent = `${quantidade} contato${quantidade === 1 ? "" : "s"} salvo${quantidade === 1 ? "" : "s"}. ` +
+      (temSeletorDeContatos ? "Toque em Importar e escolha quais contatos o Jarvis pode usar." : "Para importar, abra o Jarvis no Chrome do Android. Ou diga: \"salva o contato Maria, 38 99999-0000\".");
+    $("importarContatos").disabled = !temSeletorDeContatos;
+    $("apagarContatos").disabled = !quantidade;
+  } catch (erro) { $("statusContatos").textContent = erro.message; }
+}
+$("importarContatos").addEventListener("click", async () => {
+  try {
+    const escolhidos = await navigator.contacts.select(["name", "tel"], { multiple: true });
+    const lista = escolhidos.map((c) => ({ nome: (c.name || [])[0] || "", telefones: c.tel || [] })).filter((c) => c.nome && c.telefones.length);
+    if (!lista.length) return;
+    const r = await api("/api/contatos/importar", { method: "POST", body: JSON.stringify({ contatos: lista }) });
+    $("statusContatos").textContent = `✅ ${r.importados} importado${r.importados === 1 ? "" : "s"}. Agora são ${r.total} no Jarvis.`;
+    $("apagarContatos").disabled = false;
+  } catch (erro) {
+    if (erro?.name !== "AbortError") $("statusContatos").textContent = erro.message || "Não consegui importar.";
+  }
+});
+$("apagarContatos").addEventListener("click", async () => {
+  if (!confirm("Apagar todos os contatos salvos no Jarvis? (Os contatos do celular não são apagados.)")) return;
+  await api("/api/contatos/apagar-todos", { method: "POST", body: "{}" }).catch(() => {});
+  atualizarContatos();
+});
+$("botaoAjustes").addEventListener("click", atualizarContatos);

@@ -115,7 +115,7 @@ export function criarFerramentasEstudante(escola = null) {
   };
 }
 
-export function criarFerramentas(banco, agenda = null, whatsapp = null, computador = null, toledo = null, clima = null, instagram = null, escola = null) {
+export function criarFerramentas(banco, agenda = null, whatsapp = null, computador = null, toledo = null, clima = null, instagram = null, escola = null, contatos = null) {
   const ferramentas = [
     // ---------- Notas ----------
     {
@@ -304,6 +304,35 @@ export function criarFerramentas(banco, agenda = null, whatsapp = null, computad
     });
   }
 
+  // ---------- Contatos do adulto (nunca no Modo Escola) ----------
+  if (contatos) {
+    ferramentas.push({
+      definicao: {
+        name: "contatos",
+        description:
+          "Agenda de contatos do Jarvis. Use para descobrir o número de alguém pelo nome ou apelido antes de ligar, mandar SMS ou WhatsApp " +
+          "(\"liga para a Maria\", \"manda mensagem pro meu irmão\"), e para salvar ou apagar contatos quando o usuário pedir. " +
+          "Ações: buscar (nome = nome ou apelido); salvar (nome, telefone com DDD e, se houver, apelido como \"mãe\" ou \"meu irmão\"); apagar (nome). " +
+          "Se a busca trouxer mais de um contato ou mais de um telefone, pergunte qual. Se não achar, peça o número e ofereça salvar. Use \"\" nos campos que não se aplicam.",
+        input_schema: obj({
+          acao: { type: "string", enum: ["buscar", "salvar", "apagar"] },
+          nome: { type: "string" },
+          telefone: { type: "string" },
+          apelido: { type: "string" },
+        }),
+      },
+      executar: async ({ acao, nome, telefone, apelido }) => {
+        if (acao === "buscar") {
+          const achados = await contatos.buscar(nome);
+          return achados.length ? { contatos: achados } : { contatos: [], aviso: "Nenhum contato com esse nome. Peça o número e ofereça salvar." };
+        }
+        if (acao === "salvar") return { salvo: await contatos.salvar({ nome, telefone, apelido }) };
+        if (acao === "apagar") return contatos.apagar(nome);
+        throw new Error(`Ação desconhecida: ${acao}`);
+      },
+    });
+  }
+
   // ---------- Modo Escola: o pai/mãe acompanha o progresso da criança ----------
   if (escola) {
     ferramentas.push({
@@ -351,7 +380,9 @@ export function criarFerramentas(banco, agenda = null, whatsapp = null, computad
       description:
         "Mostra na tela um botão para o usuário abrir um app ou site no aparelho que ele está usando agora; no celular Android, abre o próprio app. " +
         "Use para: vídeo ou música (youtube, spotify), rota (waze, google_maps), mandar mensagem a OUTRA pessoa pelo WhatsApp (whatsapp: abre a conversa com o texto pronto, ele toca em enviar), " +
-        "ligar para alguém (ligar), perfil do Instagram (instagram), Netflix, abrir um site (site) ou uma pesquisa no Google (pesquisa). " +
+        "ligar para alguém (ligar), SMS (sms), perfil do Instagram (instagram), Netflix, corrida de Uber até um destino (uber), comida no iFood (ifood), " +
+        "e-mail (gmail: busca = assunto, numero = e-mail do destinatário, mensagem = texto), Google Agenda (google_agenda), compra no Mercado Livre (mercado_livre), " +
+        "abrir um site (site) ou uma pesquisa no Google (pesquisa). Para ligar, SMS ou WhatsApp com alguém pelo nome, procure antes o número com a ferramenta contatos. " +
         "Campos: busca = o que procurar, o destino da rota, o endereço do site ou o @perfil (\"\" se não houver); numero = telefone com DDD (\"\" se não souber); " +
         "mensagem = texto pronto para o WhatsApp (\"\" se não houver); nome = nome da pessoa (\"\" se não houver).",
       input_schema: obj({
