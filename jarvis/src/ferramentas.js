@@ -2,6 +2,7 @@
 // Cada ferramenta tem a definição enviada ao Claude e a função que executa.
 
 import { APPS, montarLink } from "./links.js";
+import { alterarResumo } from "./resumo.js";
 
 const obj = (properties) => ({
   type: "object",
@@ -228,6 +229,22 @@ export function criarFerramentas(banco, agenda = null, whatsapp = null, computad
       executar: ({ acao, alvo }) => computador.executar(acao, alvo),
     });
   }
+
+  // ---------- Resumo diário (WhatsApp e Telegram): ligar, desligar, pular, mudar a hora ----------
+  ferramentas.push({
+    definicao: {
+      name: "configurar_resumo_diario",
+      description:
+        "Liga, desliga, pula ou muda a hora do resumo diário que chega no WhatsApp e no Telegram (o relatório do mês, no dia 1º, segue o mesmo liga/desliga e horário). " +
+        "Ações: ligar; desligar; pular_proximo (pula só o próximo: o de hoje, se ainda não chegou a hora, senão o de amanhã); cancelar_pulo; mudar_hora (use hora de 0 a 23); ver (mostra como está). " +
+        "Em hora use -1 quando a ação não for mudar_hora.",
+      input_schema: obj({
+        acao: { type: "string", enum: ["ligar", "desligar", "pular_proximo", "cancelar_pulo", "mudar_hora", "ver"] },
+        hora: { type: "integer", description: "Hora do resumo, de 0 a 23; -1 se não for mudar_hora" },
+      }),
+    },
+    executar: ({ acao, hora }) => alterarResumo(banco.armazem, { acao, hora }),
+  });
 
   // ---------- Cidade (previsão do tempo no resumo diário) ----------
   if (clima) {

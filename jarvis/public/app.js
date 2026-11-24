@@ -1151,3 +1151,22 @@ $("sairJarvis").addEventListener("click", () => {
   guardar.escrever("jarvis.conversa", "");
   location.reload();
 });
+
+// ---------- Resumo diário: ligar, desligar, hora e pular (Ajustes) ----------
+for (let h = 0; h < 24; h++) $("resumoHora").append(new Option(`${h}h`, String(h)));
+function mostrarResumo(c) {
+  $("resumoLigado").checked = c.ligado;
+  $("resumoHora").value = String(c.hora);
+  $("statusResumo").textContent = c.descricao;
+  $("pularResumo").disabled = !c.ligado;
+  $("cancelarPuloResumo").hidden = !c.pularDia;
+}
+async function mudarResumo(acao, hora = -1) {
+  try { mostrarResumo(await api("/api/resumo", { method: "POST", body: JSON.stringify({ acao, hora }) })); }
+  catch (erro) { $("statusResumo").textContent = erro.message; }
+}
+$("resumoLigado").addEventListener("change", (e) => mudarResumo(e.target.checked ? "ligar" : "desligar"));
+$("resumoHora").addEventListener("change", (e) => mudarResumo("mudar_hora", Number(e.target.value)));
+$("pularResumo").addEventListener("click", () => mudarResumo("pular_proximo"));
+$("cancelarPuloResumo").addEventListener("click", () => mudarResumo("cancelar_pulo"));
+$("botaoAjustes").addEventListener("click", () => api("/api/resumo").then(mostrarResumo).catch(() => {}));

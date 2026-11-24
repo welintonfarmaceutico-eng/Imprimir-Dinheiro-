@@ -1,7 +1,8 @@
 // Resumo diário no WhatsApp: previsão do tempo, agenda do dia, lembretes de hoje e finanças do mês.
 // No dia 1º, também o relatório do mês que passou.
 // Montado sem a IA (não gasta crédito da Anthropic). Sai uma vez por dia, na hora de
-// JARVIS_RESUMO_HORA (padrão 7). Para desligar: JARVIS_RESUMO_HORA=desligado.
+// JARVIS_RESUMO_HORA (padrão 7). Ligar, desligar, pular e mudar a hora: pelo Jarvis ou em Ajustes
+// (fica guardado no banco e vale mais que a variável).
 import { formatar, hojeLocal, horaLocal, inicioDoDia, instanteLocal } from "./fuso.js";
 import { textoPrevisao } from "./clima.js";
 
@@ -13,6 +14,51 @@ export function horaDoResumo(env = process.env) {
   if (["", "desligado", "nao", "não", "off"].includes(valor)) return null;
   const hora = Number.parseInt(valor, 10);
   return Number.isInteger(hora) && hora >= 0 && hora <= 23 ? hora : 7;
+}
+
+// ---------- Ligar, desligar, pular e mudar a hora do resumo (pelo Jarvis ou pelos Ajustes) ----------
+// O que foi escolhido fica no banco e vale mais que a variável JARVIS_RESUMO_HORA.
+export async function configDoResumo(armazem, env = process.env) {
+  const salvo = (await armazem.obter("config", "resumo")) || {};
+  const horaEnv = horaDoResumo(env);
+  return {
+    ligado: typeof salvo.ligado === "boolean" ? salvo.ligado : horaEnv !== null,
+    hora: Number.isInteger(salvo.hora) ? salvo.hora : (horaEnv ?? 7),
+    pularDia: salvo.pularDia || "",
+  };
+}
+
+const dataBR = (iso) => iso.split("-").reverse().slice(0, 2).join("/");
+
+export function descreverResumo(c, agora = new Date()) {
+  if (!c.ligado) return "O resumo diário está desligado.";
+  const hoje = hojeLocal(agora), amanha = hojeLocal(inicioDoDia(agora, 1));
+  const pulo = c.pularDia === hoje ? " O de hoje vai ser pulado." : c.pularDia === amanha ? " O de amanhã vai ser pulado." : c.pularDia > hoje ? ` O do dia ${dataBR(c.pularDia)} vai ser pulado.` : "";
+  return `O resumo diário está ligado, todo dia às ${c.hora}h.${pulo}`;
+}
+
+export async function alterarResumo(armazem, { acao, hora }, agora = new Date()) {
+  const c = await configDoResumo(armazem);
+  switch (acao) {
+    case "ligar": c.ligado = true; break;
+    case "desligar": c.ligado = false; c.pularDia = ""; break;
+    case "mudar_hora":
+      if (!Number.isInteger(hora) || hora < 0 || hora > 23) throw new Error("A hora precisa ser de 0 a 23.");
+      c.hora = hora; c.ligado = true; break;
+    case "pular_proximo": {
+      // O próximo é o de hoje, se ainda não chegou a hora; senão, o de amanhã.
+      const hoje = hojeLocal(agora);
+      const jaEnviado = (await armazem.obter("resumo-diario", hoje))?.enviado;
+      c.pularDia = !jaEnviado && horaLocal(agora) < c.hora ? hoje : hojeLocal(inicioDoDia(agora, 1));
+      c.ligado = true;
+      break;
+    }
+    case "cancelar_pulo": c.pularDia = ""; break;
+    case "ver": break;
+    default: throw new Error(`Ação desconhecida: ${acao}`);
+  }
+  if (acao !== "ver") await armazem.salvar("config", "resumo", c);
+  return { ...c, descricao: descreverResumo(c, agora) };
 }
 
 const real = (v) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -97,12 +143,16 @@ export async function montarResumo(banco, agenda, agora = new Date(), toledo = n
 }
 
 // Chamada a cada minuto: manda o resumo quando chega a hora, uma vez só por dia.
-export async function enviarResumoDiario(banco, armazem, whatsapp, agenda, agora = new Date(), hora = horaDoResumo(), toledo = null, clima = null, instagram = null) {
-  if (!whatsapp.configurado || hora === null) return { enviado: false };
+export async function enviarResumoDiario(banco, armazem, whatsapp, agenda, agora = new Date(), hora, toledo = null, clima = null, instagram = null) {
+  if (!whatsapp.configurado) return { enviado: false };
+  const conf = await configDoResumo(armazem);
+  if (!conf.ligado) return { enviado: false };
+  hora ??= conf.hora;
   const h = horaLocal(agora);
   if (h < hora || h >= hora + JANELA_HORAS) return { enviado: false };
 
   const hoje = hojeLocal(agora);
+  if (conf.pularDia === hoje) return { enviado: false, pulado: true };
   const colecao = whatsapp.nome === "telegram" ? "resumo-diario-telegram" : "resumo-diario"; // cada canal guarda o seu
   const registro = (await armazem.obter(colecao, hoje)) || { tentativas: 0 };
   if (registro.enviado || registro.tentativas >= MAX_TENTATIVAS) return { enviado: false };
@@ -144,8 +194,11 @@ export async function montarRelatorioMensal(banco, mes) {
   return linhas.join("\n");
 }
 
-export async function enviarRelatorioMensal(banco, armazem, whatsapp, agora = new Date(), hora = horaDoResumo()) {
-  if (!whatsapp.configurado || hora === null) return { enviado: false };
+export async function enviarRelatorioMensal(banco, armazem, whatsapp, agora = new Date(), hora) {
+  if (!whatsapp.configurado) return { enviado: false };
+  const conf = await configDoResumo(armazem);
+  if (!conf.ligado) return { enviado: false }; // o relatório do mês sai junto com o resumo
+  hora ??= conf.hora;
   const hoje = hojeLocal(agora);
   const h = horaLocal(agora);
   if (!hoje.endsWith("-01") || h < hora || h >= hora + JANELA_HORAS) return { enviado: false };

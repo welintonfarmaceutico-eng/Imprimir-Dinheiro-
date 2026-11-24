@@ -1217,3 +1217,52 @@ test("telegram: marcas de voz em inglês não aparecem na mensagem", async () =>
   await telegram.enviar(1, "Gato em inglês é [en]cat[/en].");
   assert.equal(tg.enviadas().at(-1).text, "Gato em inglês é cat.");
 });
+
+// ---------- Resumo diário: ligar, desligar, pular e mudar a hora ----------
+import { alterarResumo } from "../src/resumo.js";
+
+test("resumo diário: desligar, pular o próximo e mudar a hora valem para WhatsApp e Telegram", async () => {
+  process.env.TZ = "America/Sao_Paulo";
+  const armazem = new ArmazemBlobs(blobsFalso());
+  const banco = new Banco(armazem);
+  const cb = callmebotFalso();
+  const zap = new WhatsApp({ fetch: cb.f, env: { WHATSAPP_TELEFONE: "+55", WHATSAPP_APIKEY: "1" } });
+  const tg = { nome: "telegram", configurado: true, enviados: [], enviar: async function (t) { this.enviados.push(t); } };
+  const as = (iso) => new Date(iso);
+
+  // Desligado: nada sai, em nenhum canal.
+  assert.match((await alterarResumo(armazem, { acao: "desligar" })).descricao, /desligado/);
+  assert.deepEqual(await enviarResumoDiario(banco, armazem, zap, null, as("2026-11-24T07:30:00-03:00")), { enviado: false });
+  assert.deepEqual(await enviarResumoDiario(banco, armazem, tg, null, as("2026-11-24T07:30:00-03:00")), { enviado: false });
+
+  // Ligar e pular o próximo às 6h da manhã: pula o de hoje; o de amanhã sai normalmente.
+  await alterarResumo(armazem, { acao: "ligar" });
+  const pulo = await alterarResumo(armazem, { acao: "pular_proximo" }, as("2026-11-24T06:00:00-03:00"));
+  assert.equal(pulo.pularDia, "2026-11-24");
+  assert.match(pulo.descricao, /O de hoje vai ser pulado/);
+  assert.deepEqual(await enviarResumoDiario(banco, armazem, zap, null, as("2026-11-24T07:30:00-03:00")), { enviado: false, pulado: true });
+  assert.deepEqual(await enviarResumoDiario(banco, armazem, zap, null, as("2026-11-25T07:30:00-03:00")), { enviado: true });
+
+  // Depois da hora, "pular o próximo" pula o de amanhã.
+  const pulo2 = await alterarResumo(armazem, { acao: "pular_proximo" }, as("2026-11-25T09:00:00-03:00"));
+  assert.equal(pulo2.pularDia, "2026-11-26");
+  assert.equal((await alterarResumo(armazem, { acao: "cancelar_pulo" })).pularDia, "");
+
+  // Mudar a hora para as 8h: às 7h30 não sai, às 8h sai.
+  await alterarResumo(armazem, { acao: "mudar_hora", hora: 8 });
+  assert.deepEqual(await enviarResumoDiario(banco, armazem, tg, null, as("2026-11-27T07:30:00-03:00")), { enviado: false });
+  assert.deepEqual(await enviarResumoDiario(banco, armazem, tg, null, as("2026-11-27T08:05:00-03:00")), { enviado: true });
+  await assert.rejects(alterarResumo(armazem, { acao: "mudar_hora", hora: 25 }), /0 a 23/);
+});
+
+test("resumo diário: o Jarvis tem a ferramenta e a tela tem a rota", async () => {
+  const banco = novoBanco();
+  const f = criarFerramentas(banco);
+  assert.ok(f.definicoes.some((d) => d.name === "configurar_resumo_diario"));
+  assert.match((await f.executar("configurar_resumo_diario", { acao: "desligar", hora: -1 })).descricao, /desligado/);
+
+  const tratar = criarJarvis(new ArmazemBlobs(blobsFalso()), { senha: "" });
+  const r = await (await tratar(new Request("http://x/api/resumo", { method: "POST", body: JSON.stringify({ acao: "mudar_hora", hora: 9 }) }))).json();
+  assert.equal(r.hora, 9);
+  assert.match((await (await tratar(new Request("http://x/api/resumo"))).json()).descricao, /às 9h/);
+});

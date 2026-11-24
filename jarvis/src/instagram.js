@@ -27,7 +27,7 @@ export class Instagram {
   async #token() {
     const salvo = await this.armazem.obter("config", "instagram");
     if (salvo?.token && salvo.inicial === this.tokenInicial) return salvo;
-    const novo = { token: this.tokenInicial, inicial: this.tokenInicial, renovadoEm: Date.now() };
+    const novo = { token: this.tokenInicial, inicial: this.tokenInicial, renovadoEm: this.agora ?? Date.now() };
     await this.armazem.salvar("config", "instagram", novo);
     return novo;
   }
@@ -92,6 +92,7 @@ export class Instagram {
   // Na primeira vez, só marca o que já existe como visto (para não chegar uma enxurrada de avisos antigos).
   async verificar(canais, agora = Date.now()) {
     if (!this.configurado) return { avisos: 0 };
+    this.agora = agora; // horário desta conferência (o token novo conta a partir dele)
     const controle = (await this.armazem.obter("config", "instagram-controle")) || {};
     if (controle.ultima && agora - controle.ultima < INTERVALO_MS) return { avisos: 0 };
     await this.armazem.salvar("config", "instagram-controle", { ...controle, ultima: agora });

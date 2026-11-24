@@ -409,3 +409,7 @@ body[data-perfil="estudante"] .marca::after { content: " · ESCOLA"; font-size: 
   body[data-perfil="estudante"] #abaInicio { display: flex !important; flex-direction: column; }
   body[data-perfil="estudante"] .marca::after { content: " · ESCOLA"; }
 }
+
+/* Ajustes: liga/desliga e hora do resumo diário na mesma linha */
+.campos label.linha-resumo { display: flex; align-items: center; gap: 8px; color: var(--texto); }
+.campos label.linha-resumo select { width: auto; padding: 6px 10px; }

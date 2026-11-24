@@ -9,7 +9,7 @@ import { Cerebro, promptEstudante } from "./cerebro.js";
 import { GoogleAgenda } from "./google.js";
 import { WhatsApp, enviarLembretesVencidos } from "./whatsapp.js";
 import { Computador } from "./computador.js";
-import { enviarRelatorioMensal, enviarResumoDiario, montarResumo } from "./resumo.js";
+import { alterarResumo, enviarRelatorioMensal, enviarResumoDiario, montarResumo } from "./resumo.js";
 import { Clima } from "./clima.js";
 import { registrarNotaFiscal, validarImagem } from "./notaFiscal.js";
 import { Telegram } from "./telegram.js";
@@ -367,6 +367,15 @@ export function criarJarvis(armazem, { senha = process.env.JARVIS_SENHA || "", s
       case "POST /api/telegram/desconectar":
         await telegram.desconectar();
         return json({ ok: true });
+      case "GET /api/resumo":
+        return json(await alterarResumo(armazem, { acao: "ver" }));
+      case "POST /api/resumo":
+        try {
+          const { acao, hora } = await corpo(req);
+          return json(await alterarResumo(armazem, { acao, hora: Number(hora) }));
+        } catch (erro) {
+          return json({ erro: erro.message }, 400);
+        }
       case "GET /api/whatsapp/status":
         return json({ configurado: whatsapp.configurado });
       case "POST /api/whatsapp/teste":
