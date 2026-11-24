@@ -88,7 +88,7 @@ test("dados persistem no arquivo", async () => {
 test("ferramentas têm esquema estrito válido", () => {
   const { definicoes } = criarFerramentas(novoBanco());
   for (const d of definicoes) {
-    assert.equal(d.strict, true);
+    assert.equal(typeof d.strict, "boolean"); // strict só nas que gravam ou agem (limite da API)
     assert.equal(d.input_schema.additionalProperties, false);
     assert.deepEqual(d.input_schema.required, Object.keys(d.input_schema.properties));
   }
@@ -1265,4 +1265,27 @@ test("resumo diário: o Jarvis tem a ferramenta e a tela tem a rota", async () =
   const r = await (await tratar(new Request("http://x/api/resumo", { method: "POST", body: JSON.stringify({ acao: "mudar_hora", hora: 9 }) }))).json();
   assert.equal(r.hora, 9);
   assert.match((await (await tratar(new Request("http://x/api/resumo"))).json()).descricao, /às 9h/);
+});
+
+// ---------- Limite de ferramentas "strict" da API ----------
+import { MAX_STRICT, comStrict } from "../src/ferramentas.js";
+
+test("ferramentas: nunca passam de 20 com strict, mesmo com tudo ligado", () => {
+  const banco = novoBanco();
+  const agenda = { configurado: true, listarEventos() {}, criarEvento() {}, apagarEvento() {} };
+  const zap = { configurado: true, enviar() {} };
+  const tudo = criarFerramentas(banco, agenda, zap, { executar() {} }, { configurado: true, consultar() {} }, { definirCidade() {} }, { configurado: true, recentes() {} });
+  const strict = tudo.definicoes.filter((d) => d.strict);
+  assert.ok(strict.length <= MAX_STRICT, `${strict.length} ferramentas strict`);
+  for (const nome of ["registrar_transacao", "criar_lembrete", "agenda_criar_evento", "computador", "configurar_resumo_diario"]) {
+    assert.ok(strict.some((d) => d.name === nome), `${nome} deveria continuar strict`);
+  }
+  // A trava: 30 ferramentas que gravam ainda saem com no máximo 20 strict.
+  const muitas = Array.from({ length: 30 }, (_, i) => ({ definicao: { name: `ferramenta_${i}`, input_schema: {} } }));
+  assert.equal(comStrict(muitas).filter((d) => d.strict).length, MAX_STRICT);
+});
+
+test("erros: erro inesperado da API mostra um detalhe técnico curto", () => {
+  const erro = new Anthropic.BadRequestError(400, { type: "error", error: { type: "invalid_request_error", message: "Too many strict tools" } }, "Too many strict tools", new Headers());
+  assert.match(explicarErro(erro).mensagem, /problema para pensar.*Detalhe técnico: .*strict tools/);
 });

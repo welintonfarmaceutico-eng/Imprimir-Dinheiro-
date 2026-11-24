@@ -49,7 +49,9 @@ export function explicarErro(erro) {
   if (erro instanceof Anthropic.RateLimitError) return { mensagem: "Muitas perguntas seguidas. Espere um pouco e tente de novo." };
   if (erro instanceof Anthropic.APIConnectionError) return { mensagem: "Não consegui me conectar ao servidor da IA." };
   if (erro instanceof Anthropic.InternalServerError) return { mensagem: "O servidor da IA está ocupado agora. Tente de novo em instantes." };
-  return { mensagem: "Tive um problema para pensar agora. Tente de novo em instantes." };
+  // Erro inesperado: mostra um detalhe técnico curto, para descobrir a causa mais rápido.
+  const detalhe = String((erro instanceof Anthropic.APIError && (erro.apiMessage || erro.message)) || "").replace(/\s+/g, " ").slice(0, 140);
+  return { mensagem: `Tive um problema para pensar agora. Tente de novo em instantes.${detalhe ? ` (Detalhe técnico: ${detalhe})` : ""}` };
 }
 
 export function criarJarvis(armazem, { senha = process.env.JARVIS_SENHA || "", senhaEstudante = process.env.JARVIS_SENHA_ESTUDANTE || "", cliente = null, computadorOpcoes = {}, telegramOpcoes = {} } = {}) {

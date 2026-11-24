@@ -11,6 +11,24 @@ const obj = (properties) => ({
   additionalProperties: false,
 });
 
+// A API aceita no máximo 20 ferramentas "strict" (validação rígida do que a IA preenche) por pedido.
+// Strict fica nas que gravam ou agem (gastos, lembretes, agenda, PC...); as de só consultar, sem
+// parâmetros ou de texto livre vão sem strict. A trava garante o limite mesmo com ferramentas novas.
+export const MAX_STRICT = 20;
+const SEM_STRICT = new Set([
+  "listar_notas", "listar_lembretes", "resumo_financeiro", "listar_transacoes", "agenda_listar_eventos",
+  "consultar_carteira_toledo", "instagram_novidades", "definir_cidade", "documento_pronto", "post_instagram",
+]);
+export function comStrict(ferramentas) {
+  let usados = 0;
+  return ferramentas.map((f) => {
+    const strict = !SEM_STRICT.has(f.definicao.name) && usados < MAX_STRICT;
+    if (strict) usados++;
+    else if (!SEM_STRICT.has(f.definicao.name)) console.warn(`Ferramenta sem strict (limite de ${MAX_STRICT}): ${f.definicao.name}`);
+    return { ...f.definicao, strict };
+  });
+}
+
 // Documento completo com botão de copiar (usado pelo adulto e pelo Modo Escola).
 const DOCUMENTO_PRONTO = {
   definicao: {
@@ -338,7 +356,7 @@ export function criarFerramentas(banco, agenda = null, whatsapp = null, computad
   const porNome = new Map(ferramentas.map((f) => [f.definicao.name, f]));
 
   return {
-    definicoes: ferramentas.map((f) => ({ ...f.definicao, strict: true })),
+    definicoes: comStrict(ferramentas),
     async executar(nome, input) {
       const f = porNome.get(nome);
       if (!f) throw new Error(`Ferramenta desconhecida: ${nome}`);
