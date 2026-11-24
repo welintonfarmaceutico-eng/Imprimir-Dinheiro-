@@ -1480,3 +1480,59 @@ test("ferramentas: com contatos e escola, o limite de strict continua respeitado
   assert.ok(tudo.definicoes.filter((d) => d.strict).length <= MAX_STRICT);
   assert.ok(tudo.definicoes.some((d) => d.name === "contatos" && d.strict));
 });
+
+// ---------- Painel de gastos com a IA ----------
+import { Uso, custoEmDolar } from "../src/uso.js";
+
+test("uso: custo por modelo (entrada, saída, cache e buscas)", () => {
+  const usage = { input_tokens: 1_000_000, output_tokens: 100_000, cache_read_input_tokens: 1_000_000, cache_creation_input_tokens: 0, server_tool_use: { web_search_requests: 2 } };
+  assert.equal(custoEmDolar("claude-opus-5-5", usage).toFixed(4), (4 + 2 + 0.2 + 0.02).toFixed(4));
+  assert.equal(custoEmDolar("claude-haiku-5-5", { input_tokens: 1_000_000, output_tokens: 1_000_000 }).toFixed(4), "0.6000");
+  assert.equal(custoEmDolar("claude-sonnet-5-5", { output_tokens: 1_000_000 }), 10);
+});
+
+test("uso: soma por dia e por quem, previsão, limite e aviso único em 80% e 100%", async () => {
+  process.env.TZ = "America/Sao_Paulo";
+  const armazem = new ArmazemBlobs(blobsFalso());
+  const uso = new Uso(armazem, { env: { JARVIS_DOLAR: "5" } });
+  const dia = (d) => new Date(`2026-11-${d}T12:00:00-03:00`);
+  // R$ 5,00 = US$ 1,00 = 50.000 tokens de saída no Opus 5.5
+  await uso.registrar({ quem: "adulto", modelo: "claude-opus-5-5", usage: { output_tokens: 50_000 } }, dia(22));
+  await uso.registrar({ quem: "escola", modelo: "claude-haiku-5-5", usage: { output_tokens: 1_000_000 } }, dia(23)); // US$ 0,50 = R$ 2,50
+  await uso.registrar({ quem: "fotos", modelo: "claude-opus-5-5", usage: { output_tokens: 10_000 } }, dia(24)); // R$ 1,00
+  await uso.registrar({ quem: "adulto", modelo: "claude-opus-5-5", usage: { output_tokens: 10_000 } }, dia(24)); // R$ 1,00
+  const r = await uso.resumo(dia(24));
+  assert.deepEqual(r.hoje, { total: 2, adulto: 1, escola: 0, fotos: 1, pedidos: 2 });
+  assert.deepEqual(r.mes, { total: 9.5, adulto: 6, escola: 2.5, fotos: 1, pedidos: 4 });
+  assert.equal(r.ultimos7.length, 7);
+  assert.deepEqual(r.ultimos7.at(-1), { dia: "2026-11-24", total: 2 });
+  assert.equal(r.projecaoMes, Math.round((9.5 / 24) * 30 * 100) / 100);
+
+  await uso.definirLimite("10,00");
+  const avisos = [];
+  const canal = { configurado: true, enviar: async (t) => avisos.push(t) };
+  assert.deepEqual(await uso.avisarLimite([canal], dia(24)), { avisos: 1 }, "95%: aviso de 80%");
+  assert.match(avisos[0], /95% do limite do mês/);
+  assert.deepEqual(await uso.avisarLimite([canal], dia(24)), { avisos: 0 }, "não repete");
+  await uso.registrar({ quem: "adulto", modelo: "claude-opus-5-5", usage: { output_tokens: 10_000 } }, dia(24));
+  assert.deepEqual(await uso.avisarLimite([canal], dia(24)), { avisos: 1 }, "100%: novo aviso");
+  assert.match(avisos[1], /chegaram ao limite/);
+  assert.deepEqual(await uso.definirLimite(""), { limite: null });
+});
+
+test("uso: cada resposta da IA vira gasto do perfil certo; rota só para o adulto", async () => {
+  const armazem = new ArmazemBlobs(blobsFalso());
+  const cliente = clienteFalso([
+    { stop_reason: "end_turn", model: "claude-opus-5-5", usage: { input_tokens: 10000, output_tokens: 200000 }, content: [{ type: "text", text: "Oi." }] },
+    { stop_reason: "end_turn", model: "claude-haiku-5-5", usage: { input_tokens: 10000, output_tokens: 200000 }, content: [{ type: "text", text: "Oi, Mariana!" }] },
+  ]);
+  const tratar = criarJarvis(armazem, { senha: "pai", senhaEstudante: "filha", cliente });
+  const pedir = (m, c, s, corpo) => tratar(new Request(`http://x${c}`, { method: m, headers: { "x-jarvis-senha": s }, body: m === "GET" ? undefined : JSON.stringify(corpo || {}) }));
+  await (await pedir("POST", "/api/conversar/ao-vivo", "pai", { conversa: "u1", texto: "oi" })).text();
+  await (await pedir("POST", "/api/conversar/ao-vivo", "filha", { conversa: "u1", texto: "oi" })).text();
+  const r = await (await pedir("GET", "/api/uso", "pai")).json();
+  assert.equal(r.mes.pedidos, 2);
+  assert.ok(r.mes.adulto > 0 && r.mes.escola > 0 && r.mes.adulto > r.mes.escola, "Opus custa mais que Haiku");
+  assert.equal((await pedir("GET", "/api/uso", "filha")).status, 403);
+  assert.deepEqual(await (await pedir("POST", "/api/uso/limite", "pai", { mensalReais: "50" })).json(), { limite: 50 });
+});

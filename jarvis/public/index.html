@@ -82,6 +82,7 @@
         <div class="kpi saldo"><span>Saldo</span><strong id="kSaldo">R$ 0,00</strong></div>
       </div>
       <div id="categorias" class="categorias"></div>
+      <p class="nota-pc uso-financas" id="usoFinancas"></p>
       <div class="titulo"><h2>Últimas transações</h2></div>
       <ul id="listaTransacoes" class="lista"></ul>
     </section>
@@ -173,6 +174,23 @@
           <input type="range" id="velocidade" min="0.8" max="1.5" step="0.05" value="1.05" />
         </label>
         <button type="button" class="botao-sec" id="testarVoz">▶ Testar voz</button>
+
+        <h4 class="secao so-adulto">📊 Gastos com a IA</h4>
+        <div class="conexao" id="painelUso">
+          <div class="uso-numeros">
+            <div><span>Hoje</span><strong id="usoHoje">R$ 0,00</strong></div>
+            <div><span>Este mês</span><strong id="usoMes">R$ 0,00</strong></div>
+            <div><span>Previsão do mês</span><strong id="usoPrevisao">R$ 0,00</strong></div>
+          </div>
+          <p class="nota-pc" id="usoDivisao"></p>
+          <div class="uso-barras" id="usoBarras" aria-label="Últimos 7 dias"></div>
+          <div class="uso-limite" id="usoLimiteBarra" hidden><i></i></div>
+          <label class="linha-resumo"><span>Limite por mês: R$</span>
+            <input id="usoLimite" inputmode="decimal" placeholder="sem limite" size="7" />
+            <button type="button" class="botao-sec" id="salvarLimiteUso">Salvar</button>
+          </label>
+          <p class="nota-pc">Estimativa calculada pelo Jarvis. O valor oficial fica em console.anthropic.com → Uso.</p>
+        </div>
 
         <h4 class="secao so-adulto">🔌 Conexões</h4>
         <div class="conexao"><b>Google Agenda</b><p class="nota-pc" id="statusGoogle">Verificando...</p></div>

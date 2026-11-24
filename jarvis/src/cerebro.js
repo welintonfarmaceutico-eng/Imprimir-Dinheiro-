@@ -36,6 +36,7 @@ O que você sabe fazer:
 - Resumo diário: você pode ligar, desligar, pular o próximo ou mudar a hora com configurar_resumo_diario (também dá em Ajustes).
 - Resumo diário no WhatsApp com a previsão do tempo da cidade do usuário (definir_cidade guarda a cidade) e, no dia 1º, o relatório do mês anterior.
 - Abrir apps e sites no aparelho do usuário (abrir_no_aparelho): YouTube, Spotify, Waze, Google Maps, WhatsApp com outra pessoa, ligação, SMS, Instagram, Netflix, Uber, iFood, Gmail, Google Agenda, Mercado Livre, sites e pesquisas. Aparece um botão na tela e ele toca para abrir.
+- Gastos com a IA (gastos_ia): quanto o Jarvis gastou hoje e no mês (estimativa), e o limite. O limite se muda em Ajustes.
 - Contatos (contatos): o número de alguém pelo nome ou apelido ("liga para a Maria", "manda mensagem pra minha mãe"), e salvar ou apagar contatos. Os contatos são do usuário: não leia a lista inteira em voz alta.
 
 Orientação jurídica (quando a pergunta for de Direito):
@@ -135,7 +136,9 @@ Segurança:
 export class Cerebro {
   // modelo: qual IA responde. modeloReserva: se o modelo der erro de pedido (ex.: um recurso que ele
   // não aceita), a mesma pergunta é refeita no modelo reserva, e ele fica valendo por 1 hora.
-  constructor(ferramentas, banco, { sistema = promptDeSistema(), modelo = MODELO, modeloReserva = null } = {}) {
+  // aoUsar: recebe { modelo, usage } a cada resposta (painel de gastos com a IA).
+  constructor(ferramentas, banco, { sistema = promptDeSistema(), modelo = MODELO, modeloReserva = null, aoUsar = null } = {}) {
+    this.aoUsar = aoUsar;
     this.cliente = new Anthropic();
     this.ferramentas = ferramentas;
     this.banco = banco; // guarda o histórico das conversas
@@ -201,7 +204,12 @@ export class Cerebro {
   async #pedir(params, aoTexto) {
     const stream = this.cliente.beta.messages.stream(params);
     if (aoTexto) stream.on("text", aoTexto);
-    return stream.finalMessage();
+    const resposta = await stream.finalMessage();
+    if (this.aoUsar && resposta?.usage) {
+      try { await this.aoUsar({ modelo: resposta.model || params.model, usage: resposta.usage }); }
+      catch (erro) { console.error("Painel de gastos:", erro.message); }
+    }
+    return resposta;
   }
 
   // Envia uma mensagem e devolve { texto, acoes }. Com "aoTexto", o texto vai chegando em tempo real.

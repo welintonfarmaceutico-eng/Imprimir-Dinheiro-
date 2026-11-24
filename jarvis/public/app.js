@@ -1324,3 +1324,46 @@ $("apagarContatos").addEventListener("click", async () => {
   atualizarContatos();
 });
 $("botaoAjustes").addEventListener("click", atualizarContatos);
+
+// ---------- Painel de gastos com a IA (estimativa) ----------
+async function atualizarUso() {
+  if (perfil === "estudante") return;
+  try {
+    const u = await api("/api/uso");
+    $("usoHoje").textContent = moeda(u.hoje.total);
+    $("usoMes").textContent = moeda(u.mes.total);
+    $("usoPrevisao").textContent = moeda(u.projecaoMes);
+    const partes = [`você ${moeda(u.mes.adulto)}`, `Modo Escola ${moeda(u.mes.escola)}`, `fotos e documentos ${moeda(u.mes.fotos)}`];
+    $("usoDivisao").textContent = `No mês: ${partes.join(" · ")} · ${u.mes.pedidos} respostas`;
+    const maior = Math.max(0.01, ...u.ultimos7.map((d) => d.total));
+    $("usoBarras").replaceChildren(...u.ultimos7.map((d) => {
+      const barra = document.createElement("div");
+      barra.className = "uso-barra";
+      barra.title = `${d.dia.split("-").reverse().slice(0, 2).join("/")}: ${moeda(d.total)}`;
+      const i = document.createElement("i");
+      i.style.height = `${Math.max(3, Math.round((d.total / maior) * 100))}%`;
+      const dia = document.createElement("small");
+      dia.textContent = d.dia.slice(8, 10);
+      barra.append(i, dia);
+      return barra;
+    }));
+    $("usoLimite").value = u.limite != null ? String(u.limite).replace(".", ",") : "";
+    const barraLimite = $("usoLimiteBarra");
+    barraLimite.hidden = u.limite == null;
+    if (u.limite != null) {
+      barraLimite.firstElementChild.style.width = `${Math.min(100, u.usoDoLimite)}%`;
+      barraLimite.classList.toggle("alerta", u.usoDoLimite >= 80);
+      barraLimite.title = `${u.usoDoLimite}% do limite`;
+    }
+    $("usoFinancas").textContent = `🤖 IA do Jarvis este mês: ${moeda(u.mes.total)} (estimativa)${u.limite != null ? ` · ${u.usoDoLimite}% do limite` : ""}`;
+  } catch {}
+}
+$("salvarLimiteUso").addEventListener("click", async () => {
+  try {
+    await api("/api/uso/limite", { method: "POST", body: JSON.stringify({ mensalReais: $("usoLimite").value.trim() }) });
+    atualizarUso();
+  } catch (erro) { $("usoDivisao").textContent = erro.message; }
+});
+$("botaoAjustes").addEventListener("click", atualizarUso);
+carregarPerfil().then(atualizarUso);
+setInterval(atualizarUso, 5 * 60 * 1000);
